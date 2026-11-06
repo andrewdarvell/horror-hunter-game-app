@@ -30,6 +30,12 @@ configure(subprojects - project(':android')) {
   java.sourceCompatibility = 8
   java.targetCompatibility = 8
 
+  compileJava {
+    options.incremental = true
+  }
+}
+
+configure([project(':core'), project(':lwjgl3')]) {
   // From https://lyze.dev/2021/04/29/libGDX-Internal-Assets-List/
   // The article can be helpful when using assets.txt in your project.
   tasks.register('generateAssetList') {
@@ -50,9 +56,6 @@ configure(subprojects - project(':android')) {
   }
   processResources.dependsOn 'generateAssetList'
 
-  compileJava {
-    options.incremental = true
-  }
 }
 
 subprojects {

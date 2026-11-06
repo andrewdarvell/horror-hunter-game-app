@@ -1,37 +1,38 @@
-# Repository Guidelines
+# Правила работы с репозиторием
 
-## Project Structure & Module Organization
+## Структура проекта и модули
 
-HorrorHunterGame is a Java/libGDX game with three Gradle modules:
+HorrorHunterGame — игра на Java и libGDX с четырьмя модулями Gradle:
 
-- `core/src/main/java/ru/darvell/game/hhg/`: shared game logic; `Main` creates the initial `FirstScreen`. Keep platform-independent gameplay here.
-- `lwjgl3/src/main/java/`: desktop launcher and startup helpers; desktop icons and resources live in `lwjgl3/icons/` and `lwjgl3/src/main/resources/`.
-- `android/src/main/java/`: Android launcher. Android resources and manifest live in `android/res/` and `android/AndroidManifest.xml`.
-- `assets/`: shared runtime assets, currently a placeholder. Gradle generates `assets/assets.txt`; do not edit or commit that generated list.
+- `domain/src/main/java/ru/darvell/game/hhg/domain/` — основной модуль для независимых от платформы моделей и правил игры. При компиляции использует только Lombok.
+- `core/src/main/java/ru/darvell/game/hhg/` — интеграция с libGDX. Класс `Main` создаёт начальный экран `FirstScreen`. Модуль зависит от `domain`.
+- `lwjgl3/src/main/java/` — запуск настольной версии и вспомогательный код. Значки и ресурсы находятся в `lwjgl3/icons/` и `lwjgl3/src/main/resources/`.
+- `android/src/main/java/` — запуск версии для Android. Ресурсы и манифест находятся в `android/res/` и `android/AndroidManifest.xml`.
+- `assets/` — общие игровые ресурсы; пока здесь только файл-заглушка. Gradle создаёт `assets/assets.txt`: не редактируйте и не добавляйте этот файл в коммиты.
 
-## Build, Test, and Development Commands
+## Сборка, тестирование и запуск
 
-Run commands from the repository root using the checked-in wrapper (`gradlew.bat` on Windows). The Gradle daemon configuration selects JDK 21; application sources target Java 8. Android builds require an Android SDK with platform 36.
+Запускайте команды из корня репозитория через включённый в проект Gradle Wrapper (`gradlew.bat` в Windows). Конфигурация Gradle использует JDK 21, а исходный код рассчитан на Java 8. Для сборки Android нужен Android SDK с платформой 36.
 
-- `./gradlew lwjgl3:run`: launch the desktop game using `assets/` as its working directory.
-- `./gradlew lwjgl3:jar`: create the runnable game JAR in `lwjgl3/build/libs/`.
-- `./gradlew build`: build all modules and run configured checks.
-- `./gradlew core:test`: run shared-code unit tests, when added.
-- `./gradlew android:assembleDebug`: build the debug APK.
-- `./gradlew android:lint`: run Android static validation.
+- `./gradlew lwjgl3:run` — запустить настольную версию с рабочим каталогом `assets/`.
+- `./gradlew lwjgl3:jar` — собрать исполняемый JAR в `lwjgl3/build/libs/`.
+- `./gradlew build` — собрать все модули и выполнить настроенные проверки.
+- `./gradlew domain:test` и `./gradlew core:test` — запустить модульные тесты, когда они появятся.
+- `./gradlew android:assembleDebug` — собрать отладочный APK.
+- `./gradlew android:lint` — запустить статическую проверку Android.
 
-## Coding Style & Naming Conventions
+## Стиль кода и имена
 
-Follow `.editorconfig`: UTF-8, LF endings, spaces, final newlines, four-space Java indentation, and two-space Gradle indentation. Remove trailing whitespace except where Markdown requires it. No dedicated formatter is configured.
+Следуйте `.editorconfig`: UTF-8, переводы строк LF, пробелы вместо табуляции и перевод строки в конце файла. Для Java используйте отступ в четыре пробела, для Gradle — в два. Удаляйте пробелы в конце строк, кроме случаев, когда они нужны в Markdown. Отдельный форматировщик не настроен.
 
-Use `UpperCamelCase` for classes, `lowerCamelCase` for methods and fields, and lowercase package names under `ru.darvell.game.hhg`. Preserve Java 8 compatibility. Release owned libGDX resources in the appropriate lifecycle methods.
+Называйте классы в `UpperCamelCase`, методы и поля — в `lowerCamelCase`. Используйте имена пакетов в нижнем регистре под `ru.darvell.game.hhg`. Сохраняйте совместимость с Java 8. Освобождайте ресурсы libGDX в соответствующих методах жизненного цикла.
 
-## Testing Guidelines
+## Тестирование
 
-No tests, test framework dependencies, or coverage thresholds are currently configured. Add shared unit tests under `core/src/test/java/`, mirror production packages, and name classes `*Test`. Configure the chosen framework before relying on the test task. For gameplay changes, manually check desktop startup, rendering, resizing, and relevant Android behavior.
+Сейчас в проекте нет тестов, зависимостей для тестирования и требований к покрытию. Добавляйте модульные тесты в `domain/src/test/java/` или `core/src/test/java/` в зависимости от расположения проверяемого кода. Повторяйте структуру пакетов исходного кода и называйте классы `*Test`. Перед использованием задачи `test` настройте выбранный тестовый фреймворк. После изменений игрового процесса вручную проверяйте запуск настольной версии, отрисовку, изменение размера окна и соответствующее поведение на Android.
 
-## Commit & Pull Request Guidelines
+## Коммиты и запросы на слияние
 
-Git history is unavailable in this checkout, so existing commit conventions cannot be verified. Use concise, imperative subjects such as `Add player movement` and keep commits focused.
+История Git в этой копии недоступна, поэтому существующие соглашения об именах коммитов проверить нельзя. Пишите короткие темы в повелительном наклонении, например `Add player movement`, и сохраняйте каждый коммит тематически цельным.
 
-PRs should explain the behavior changed, link relevant issues, and report checks performed. Include screenshots or recordings for visible changes. Keep SDK paths in ignored `local.properties`; exclude generated builds and native libraries.
+В описании запроса на слияние указывайте изменённое поведение, ссылки на связанные задачи и выполненные проверки. Для визуальных изменений добавляйте снимки экрана или записи. Пути к Android SDK храните в игнорируемом файле `local.properties`; не включайте в коммиты результаты сборки и нативные библиотеки.
