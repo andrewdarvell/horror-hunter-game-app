@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HunterStateTest {
     private static final double EPSILON = 1.0e-9;
@@ -101,6 +102,19 @@ class HunterStateTest {
 
         assertEquals(0.5 + Math.sqrt(0.02), hunter.getPosition().getX(), EPSILON);
         assertEquals(-0.6, hunter.getPosition().getY(), EPSILON);
+    }
+
+    @Test
+    void diagonalInputKeepsSlidingAroundCornerAcrossUpdates() {
+        HunterState hunter = new HunterState(new WorldPosition(-0.6, -0.8), 1.0, 1.0);
+
+        for (int step = 0; step < 50; step++) {
+            WorldPosition previous = hunter.getPosition();
+            hunter.move(1.0, 1.0, 0.05, OBSTACLE_GEOMETRY);
+            assertTrue(OBSTACLE_GEOMETRY.isCirclePositionValid(hunter.getPosition(), 1.0));
+            assertTrue(Math.hypot(hunter.getPosition().getX() - previous.getX(),
+                hunter.getPosition().getY() - previous.getY()) > EPSILON);
+        }
     }
 
     private static void assertBlocked(

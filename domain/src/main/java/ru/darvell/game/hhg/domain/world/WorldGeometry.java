@@ -44,11 +44,7 @@ public final class WorldGeometry {
         }
 
         for (StaticAabb obstacle : obstacles) {
-            double closestX = clamp(center.getX(), obstacle.getX(), obstacle.getMaxX());
-            double closestY = clamp(center.getY(), obstacle.getY(), obstacle.getMaxY());
-            double deltaX = center.getX() - closestX;
-            double deltaY = center.getY() - closestY;
-            if (deltaX * deltaX + deltaY * deltaY < radius * radius) {
+            if (penetrates(center, radius, obstacle)) {
                 return false;
             }
         }
@@ -75,7 +71,55 @@ public final class WorldGeometry {
         if (isCirclePositionValid(yCandidate, radius)) {
             resolvedPosition = yCandidate;
         }
+        if (desiredX != 0.0 && desiredY != 0.0 && resolvedPosition.equals(currentPosition)) {
+            return resolveCornerSlide(currentPosition, radius, desiredX, desiredY);
+        }
         return resolvedPosition;
+    }
+
+    /** Сохраняет касательную составляющую, которую обе мировые оси могли заблокировать. */
+    private WorldPosition resolveCornerSlide(
+        WorldPosition position, double radius, double desiredX, double desiredY
+    ) {
+        WorldPosition bestPosition = position;
+        double bestProgress = 0.0;
+        double minimumSlide = Math.hypot(desiredX, desiredY) * 1.0e-12;
+        WorldPosition xCandidate = position.translate(desiredX, 0.0);
+        WorldPosition yCandidate = position.translate(0.0, desiredY);
+        for (StaticAabb obstacle : obstacles) {
+            if (!penetrates(xCandidate, radius, obstacle)
+                && !penetrates(yCandidate, radius, obstacle)) {
+                continue;
+            }
+            double normalX = position.getX()
+                - clamp(position.getX(), obstacle.getX(), obstacle.getMaxX());
+            double normalY = position.getY()
+                - clamp(position.getY(), obstacle.getY(), obstacle.getMaxY());
+            double normalLength = Math.hypot(normalX, normalY);
+            if (normalLength == 0.0) continue;
+            normalX /= normalLength;
+            normalY /= normalLength;
+            if (desiredX * normalX + desiredY * normalY >= 0.0) continue;
+
+            // t = (-normalY, normalX); проекция без нормализации скорости скольжения.
+            double tangentDistance = -desiredX * normalY + desiredY * normalX;
+            if (Math.abs(tangentDistance) <= minimumSlide) continue;
+            double slideX = -normalY * tangentDistance;
+            double slideY = normalX * tangentDistance;
+            double progress = slideX * desiredX + slideY * desiredY;
+            WorldPosition candidate = position.translate(slideX, slideY);
+            if (progress > bestProgress && isCirclePositionValid(candidate, radius)) {
+                bestPosition = candidate;
+                bestProgress = progress;
+            }
+        }
+        return bestPosition;
+    }
+
+    private static boolean penetrates(WorldPosition center, double radius, StaticAabb obstacle) {
+        double deltaX = center.getX() - clamp(center.getX(), obstacle.getX(), obstacle.getMaxX());
+        double deltaY = center.getY() - clamp(center.getY(), obstacle.getY(), obstacle.getMaxY());
+        return deltaX * deltaX + deltaY * deltaY < radius * radius;
     }
 
     private static double clamp(double value, double minimum, double maximum) {

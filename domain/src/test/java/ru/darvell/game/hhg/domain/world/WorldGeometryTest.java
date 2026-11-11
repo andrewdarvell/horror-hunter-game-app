@@ -1,6 +1,7 @@
 package ru.darvell.game.hhg.domain.world;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -65,5 +66,60 @@ class WorldGeometryTest {
             () -> geometry.isCirclePositionValid(new WorldPosition(0.0, 0.0), 0.0));
         assertThrows(IllegalArgumentException.class,
             () -> geometry.isCirclePositionValid(new WorldPosition(0.0, 0.0), Double.NaN));
+    }
+
+    @Test
+    void slidesAroundEveryCornerWhenBothAxisCandidatesAreBlocked() {
+        for (int signX : new int[] {-1, 1}) {
+            for (int signY : new int[] {-1, 1}) {
+                for (boolean swapAxes : new boolean[] {false, true}) {
+                    double cornerX = signX < 0 ? 0.0 : 2.0;
+                    double cornerY = signY < 0 ? 0.0 : 2.0;
+                    WorldPosition start = new WorldPosition(
+                        cornerX + signX * (swapAxes ? 0.801 : 0.601),
+                        cornerY + signY * (swapAxes ? 0.601 : 0.801));
+                    double dx = -signX * 0.2;
+                    double dy = -signY * 0.2;
+                    assertTrue(geometry.isCirclePositionValid(start, 1.0));
+                    assertFalse(geometry.isCirclePositionValid(start.translate(dx, 0.0), 1.0));
+                    assertFalse(geometry.isCirclePositionValid(start.translate(0.0, dy), 1.0));
+
+                    WorldPosition result = geometry.resolveMovement(start, 1.0, dx, dy);
+
+                    assertTrue(geometry.isCirclePositionValid(result, 1.0));
+                    double movedX = result.getX() - start.getX();
+                    double movedY = result.getY() - start.getY();
+                    assertTrue(movedX * dx + movedY * dy > 0.0,
+                        "Corner must preserve forward tangential movement: " + start);
+                    assertTrue(Math.hypot(movedX, movedY) <= Math.hypot(dx, dy));
+                }
+            }
+        }
+    }
+
+    @Test
+    void stopsWhenInputPointsDirectlyIntoCorner() {
+        WorldPosition start = new WorldPosition(-0.75, -0.75);
+
+        for (int step = 0; step < 100; step++) {
+            assertEquals(start, geometry.resolveMovement(start, 1.0, 0.1, 0.1));
+        }
+    }
+
+    @Test
+    void stopsForRadialInputAtAsymmetricCornerContact() {
+        WorldPosition start = new WorldPosition(-0.6, -0.8);
+
+        assertEquals(start, geometry.resolveMovement(start, 1.0, 0.15, 0.2));
+    }
+
+    @Test
+    void tangentialFallbackCannotEnterAnotherObstacle() {
+        WorldGeometry confined = new WorldGeometry(Arrays.asList(
+            OBSTACLE, new StaticAabb(-2.0, -2.0, 2.0, 0.2)));
+        WorldPosition start = new WorldPosition(-0.6, -0.8);
+
+        assertTrue(confined.isCirclePositionValid(start, 1.0));
+        assertEquals(start, confined.resolveMovement(start, 1.0, 0.2, 0.2));
     }
 }
