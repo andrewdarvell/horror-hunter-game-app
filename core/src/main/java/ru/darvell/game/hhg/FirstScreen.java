@@ -17,6 +17,9 @@ import ru.darvell.game.hhg.domain.world.StaticAabb;
 import ru.darvell.game.hhg.domain.world.TacticalGrid;
 import ru.darvell.game.hhg.domain.world.WorldGeometry;
 import ru.darvell.game.hhg.domain.world.WorldPosition;
+import ru.darvell.game.hhg.domain.world.WorldSceneState;
+import ru.darvell.game.hhg.domain.world.SceneMode;
+import ru.darvell.game.hhg.domain.world.TacticalEntryResult;
 
 /** First screen of the application. Displayed after the application is created. */
 public class FirstScreen implements Screen {
@@ -26,8 +29,7 @@ public class FirstScreen implements Screen {
     private static final double PROTOTYPE_CELL_SIZE = 2.0;
     private static final double PROTOTYPE_HUNTER_RADIUS = 0.4;
 
-    private final HunterState hunter;
-    private final CreaturePatrolState creaturePatrol;
+    private final WorldSceneState scene;
     private final TacticalGrid tacticalGrid;
     private final WorldGeometry worldGeometry;
     private final OrthographicCamera camera;
@@ -41,16 +43,17 @@ public class FirstScreen implements Screen {
             new StaticAabb(-5.0, 2.0, 4.0, 1.0),
             new StaticAabb(-3.0, -4.0, 2.0, 2.0)
         ));
-        hunter = new HunterState(
+        HunterState hunter = new HunterState(
             new WorldPosition(0.0, 0.0), PROTOTYPE_MOVEMENT_SPEED, PROTOTYPE_HUNTER_RADIUS);
         if (!worldGeometry.isCirclePositionValid(hunter.getPosition(), hunter.getRadius())) {
             throw new IllegalStateException("Initial hunter position must be valid");
         }
-        creaturePatrol = new CreaturePatrolState(Arrays.asList(
+        CreaturePatrolState creaturePatrol = new CreaturePatrolState(Arrays.asList(
             new WorldPosition(5.0, 0.0),
             new WorldPosition(5.0, 1.0)
         ), 2.0, 0.3, 0.5, 3.0, worldGeometry);
         tacticalGrid = new TacticalGrid(0.0, 0.0, PROTOTYPE_CELL_SIZE);
+        scene = new WorldSceneState(hunter, creaturePatrol, tacticalGrid, worldGeometry);
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
         shapeRenderer = new ShapeRenderer();
@@ -63,23 +66,21 @@ public class FirstScreen implements Screen {
 
     @Override
     public void render(float delta) {
-        updateHunter(delta);
-        creaturePatrol.update(delta, hunter.getPosition());
+        TacticalEntryResult.Outcome outcome = scene.update(axis(Input.Keys.A, Input.Keys.D),
+            axis(Input.Keys.S, Input.Keys.W), delta, Gdx.input.isKeyJustPressed(Input.Keys.T));
+        if (outcome == TacticalEntryResult.Outcome.NO_VALID_PLACEMENT
+            || outcome == TacticalEntryResult.Outcome.INVALID_INPUT) {
+            Gdx.app.log("Tactical entry", "Entry rejected: " + outcome);
+        }
         updateDebugControls();
         viewport.apply();
         followHunter();
         drawScene();
     }
 
-    private void updateHunter(float delta) {
-        double directionX = axis(Input.Keys.A, Input.Keys.D);
-        double directionY = axis(Input.Keys.S, Input.Keys.W);
-        hunter.move(directionX, directionY, delta, worldGeometry);
-    }
-
     private boolean isCellPassable(int cellX, int cellY) {
         return tacticalGrid.isCellPassable(
-            new CellCoordinates(cellX, cellY), hunter.getRadius(), worldGeometry);
+            new CellCoordinates(cellX, cellY), scene.getHunterRadius(), worldGeometry);
     }
 
     private static int axis(int negativeKey, int positiveKey) {
@@ -90,7 +91,7 @@ public class FirstScreen implements Screen {
     }
 
     private void followHunter() {
-        WorldPosition position = hunter.getPosition();
+        WorldPosition position = scene.getHunterPosition();
         camera.position.set((float) position.getX(), (float) position.getY(), 0.0f);
         camera.update();
     }
@@ -104,7 +105,7 @@ public class FirstScreen implements Screen {
     private void drawScene() {
         ScreenUtils.clear(0.10f, 0.16f, 0.12f, 1.0f);
         shapeRenderer.setProjectionMatrix(camera.combined);
-        if (debugGridVisible) {
+        if (debugGridVisible || scene.getMode() == SceneMode.TACTICAL) {
             drawDebugGrid();
         }
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -118,22 +119,22 @@ public class FirstScreen implements Screen {
             );
         }
         shapeRenderer.setColor(Color.GOLDENROD);
-        WorldPosition position = hunter.getPosition();
+        WorldPosition position = scene.getHunterPosition();
         shapeRenderer.circle(
             (float) position.getX(),
             (float) position.getY(),
-            (float) hunter.getRadius(),
+            (float) scene.getHunterRadius(),
             32
         );
-        shapeRenderer.setColor(creaturePatrol.isAlerted() ? Color.RED : Color.CYAN);
-        WorldPosition creaturePosition = creaturePatrol.getPosition();
+        shapeRenderer.setColor(scene.isCreatureAlerted() ? Color.RED : Color.CYAN);
+        WorldPosition creaturePosition = scene.getCreaturePosition();
         shapeRenderer.circle(
             (float) creaturePosition.getX(),
             (float) creaturePosition.getY(),
-            (float) creaturePatrol.getRadius(),
+            (float) scene.getCreatureRadius(),
             32
         );
-        WorldPosition lastSeen = creaturePatrol.getLastSeenHunterPosition();
+        WorldPosition lastSeen = scene.getLastSeenHunterPosition();
         if (lastSeen != null) {
             double dx = lastSeen.getX() - creaturePosition.getX();
             double dy = lastSeen.getY() - creaturePosition.getY();
@@ -146,6 +147,20 @@ public class FirstScreen implements Screen {
             }
         }
         shapeRenderer.end();
+        if (scene.getPlacement() != null) {
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+            drawOccupiedCell(scene.getPlacement().getHunterCell(), Color.GOLDENROD);
+            drawOccupiedCell(scene.getPlacement().getCreatureCell(), Color.CYAN);
+            shapeRenderer.end();
+        }
+    }
+
+    private void drawOccupiedCell(CellCoordinates cell, Color color) {
+        WorldPosition center = tacticalGrid.cellToWorldCenter(cell);
+        double size = tacticalGrid.getCellSize();
+        shapeRenderer.setColor(color);
+        shapeRenderer.rect((float) (center.getX() - size / 2),
+            (float) (center.getY() - size / 2), (float) size, (float) size);
     }
 
     private void drawDebugGrid() {
