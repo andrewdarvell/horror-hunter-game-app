@@ -51,6 +51,67 @@ public final class WorldGeometry {
         return true;
     }
 
+    /** Проверяет весь прямолинейный путь круга; касание без проникновения допустимо. */
+    public boolean isCirclePathValid(WorldPosition from, WorldPosition to, double radius) {
+        // Проверяем оба аргумента даже тогда, когда первая позиция заблокирована.
+        boolean startValid = isCirclePositionValid(from, radius);
+        boolean endValid = isCirclePositionValid(to, radius);
+        double dx = to.getX() - from.getX();
+        double dy = to.getY() - from.getY();
+        double length = Math.hypot(dx, dy);
+        if (!Double.isFinite(length)) {
+            throw new IllegalArgumentException("Path length must be finite");
+        }
+        if (!startValid || !endValid) return false;
+        if (length == 0.0) return true;
+
+        for (StaticAabb obstacle : obstacles) {
+            if (intersectsSegment(from, dx, dy, obstacle)
+                || pointSegmentDistance(obstacle.getX(), obstacle.getY(), from, dx, dy, length) < radius
+                || pointSegmentDistance(obstacle.getMaxX(), obstacle.getY(), from, dx, dy, length) < radius
+                || pointSegmentDistance(obstacle.getX(), obstacle.getMaxY(), from, dx, dy, length) < radius
+                || pointSegmentDistance(obstacle.getMaxX(), obstacle.getMaxY(), from, dx, dy, length) < radius) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean intersectsSegment(WorldPosition from, double dx, double dy, StaticAabb box) {
+        double enter = 0.0;
+        double exit = 1.0;
+        if (dx == 0.0) {
+            if (from.getX() < box.getX() || from.getX() > box.getMaxX()) return false;
+        } else {
+            double a = (box.getX() - from.getX()) / dx;
+            double b = (box.getMaxX() - from.getX()) / dx;
+            enter = Math.max(enter, Math.min(a, b));
+            exit = Math.min(exit, Math.max(a, b));
+        }
+        if (dy == 0.0) {
+            if (from.getY() < box.getY() || from.getY() > box.getMaxY()) return false;
+        } else {
+            double a = (box.getY() - from.getY()) / dy;
+            double b = (box.getMaxY() - from.getY()) / dy;
+            enter = Math.max(enter, Math.min(a, b));
+            exit = Math.min(exit, Math.max(a, b));
+        }
+        return enter <= exit;
+    }
+
+    private static double pointSegmentDistance(
+        double x, double y, WorldPosition from, double dx, double dy, double length
+    ) {
+        double unitX = dx / length;
+        double unitY = dy / length;
+        double relativeX = x - from.getX();
+        double relativeY = y - from.getY();
+        double projection = relativeX * unitX + relativeY * unitY;
+        if (projection <= 0.0) return Math.hypot(relativeX, relativeY);
+        if (projection >= length) return Math.hypot(x - (from.getX() + dx), y - (from.getY() + dy));
+        return Math.abs(relativeX * unitY - relativeY * unitX);
+    }
+
     public WorldPosition resolveMovement(
         WorldPosition currentPosition,
         double radius,

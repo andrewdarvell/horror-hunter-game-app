@@ -11,6 +11,7 @@ import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import ru.darvell.game.hhg.domain.world.CellCoordinates;
+import ru.darvell.game.hhg.domain.world.CreaturePatrolState;
 import ru.darvell.game.hhg.domain.world.HunterState;
 import ru.darvell.game.hhg.domain.world.StaticAabb;
 import ru.darvell.game.hhg.domain.world.TacticalGrid;
@@ -26,6 +27,7 @@ public class FirstScreen implements Screen {
     private static final double PROTOTYPE_HUNTER_RADIUS = 0.4;
 
     private final HunterState hunter;
+    private final CreaturePatrolState creaturePatrol;
     private final TacticalGrid tacticalGrid;
     private final WorldGeometry worldGeometry;
     private final OrthographicCamera camera;
@@ -44,6 +46,11 @@ public class FirstScreen implements Screen {
         if (!worldGeometry.isCirclePositionValid(hunter.getPosition(), hunter.getRadius())) {
             throw new IllegalStateException("Initial hunter position must be valid");
         }
+        creaturePatrol = new CreaturePatrolState(Arrays.asList(
+            new WorldPosition(-4.0, 0.0),
+            new WorldPosition(-2.0, 0.0),
+            new WorldPosition(0.0, 1.0)
+        ), 2.0, 0.3, 0.5, worldGeometry);
         tacticalGrid = new TacticalGrid(0.0, 0.0, PROTOTYPE_CELL_SIZE);
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
@@ -58,6 +65,7 @@ public class FirstScreen implements Screen {
     @Override
     public void render(float delta) {
         updateHunter(delta);
+        creaturePatrol.update(delta);
         updateDebugControls();
         viewport.apply();
         followHunter();
@@ -116,6 +124,14 @@ public class FirstScreen implements Screen {
             (float) position.getX(),
             (float) position.getY(),
             (float) hunter.getRadius(),
+            32
+        );
+        shapeRenderer.setColor(Color.CYAN);
+        WorldPosition creaturePosition = creaturePatrol.getPosition();
+        shapeRenderer.circle(
+            (float) creaturePosition.getX(),
+            (float) creaturePosition.getY(),
+            (float) creaturePatrol.getRadius(),
             32
         );
         shapeRenderer.end();
