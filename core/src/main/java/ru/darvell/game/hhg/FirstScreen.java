@@ -47,10 +47,9 @@ public class FirstScreen implements Screen {
             throw new IllegalStateException("Initial hunter position must be valid");
         }
         creaturePatrol = new CreaturePatrolState(Arrays.asList(
-            new WorldPosition(-4.0, 0.0),
-            new WorldPosition(-2.0, 0.0),
-            new WorldPosition(0.0, 1.0)
-        ), 2.0, 0.3, 0.5, worldGeometry);
+            new WorldPosition(5.0, 0.0),
+            new WorldPosition(5.0, 1.0)
+        ), 2.0, 0.3, 0.5, 3.0, worldGeometry);
         tacticalGrid = new TacticalGrid(0.0, 0.0, PROTOTYPE_CELL_SIZE);
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
@@ -65,7 +64,7 @@ public class FirstScreen implements Screen {
     @Override
     public void render(float delta) {
         updateHunter(delta);
-        creaturePatrol.update(delta);
+        creaturePatrol.update(delta, hunter.getPosition());
         updateDebugControls();
         viewport.apply();
         followHunter();
@@ -126,7 +125,7 @@ public class FirstScreen implements Screen {
             (float) hunter.getRadius(),
             32
         );
-        shapeRenderer.setColor(Color.CYAN);
+        shapeRenderer.setColor(creaturePatrol.isAlerted() ? Color.RED : Color.CYAN);
         WorldPosition creaturePosition = creaturePatrol.getPosition();
         shapeRenderer.circle(
             (float) creaturePosition.getX(),
@@ -134,6 +133,18 @@ public class FirstScreen implements Screen {
             (float) creaturePatrol.getRadius(),
             32
         );
+        WorldPosition lastSeen = creaturePatrol.getLastSeenHunterPosition();
+        if (lastSeen != null) {
+            double dx = lastSeen.getX() - creaturePosition.getX();
+            double dy = lastSeen.getY() - creaturePosition.getY();
+            double length = Math.hypot(dx, dy);
+            if (length > 0.0) {
+                shapeRenderer.setColor(Color.WHITE);
+                shapeRenderer.rectLine((float) creaturePosition.getX(), (float) creaturePosition.getY(),
+                    (float) (creaturePosition.getX() + dx / length * 0.6),
+                    (float) (creaturePosition.getY() + dy / length * 0.6), 0.08f);
+            }
+        }
         shapeRenderer.end();
     }
 

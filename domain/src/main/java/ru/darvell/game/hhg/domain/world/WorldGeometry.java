@@ -77,6 +77,27 @@ public final class WorldGeometry {
         return true;
     }
 
+    /** Видимость центров: пересечение или касание замкнутого AABB перекрывает обзор. */
+    public boolean hasLineOfSight(WorldPosition from, WorldPosition to) {
+        requireFinitePosition(from);
+        requireFinitePosition(to);
+        double dx = to.getX() - from.getX();
+        double dy = to.getY() - from.getY();
+        if (!Double.isFinite(Math.hypot(dx, dy))) {
+            throw new IllegalArgumentException("Sight segment length must be finite");
+        }
+        for (StaticAabb obstacle : obstacles) {
+            if (intersectsSegment(from, dx, dy, obstacle)) return false;
+        }
+        return true;
+    }
+
+    private static void requireFinitePosition(WorldPosition position) {
+        if (position == null || !Double.isFinite(position.getX()) || !Double.isFinite(position.getY())) {
+            throw new IllegalArgumentException("Sight endpoint must be present and finite");
+        }
+    }
+
     private static boolean intersectsSegment(WorldPosition from, double dx, double dy, StaticAabb box) {
         double enter = 0.0;
         double exit = 1.0;
