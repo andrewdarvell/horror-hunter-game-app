@@ -76,6 +76,15 @@ public final class CreaturePatrolState {
         if (!Double.isFinite(deltaSeconds) || deltaSeconds < 0.0) {
             throw new IllegalArgumentException("Delta time must be finite and non-negative");
         }
+        checkDetection(hunterPosition);
+        advancePatrol(deltaSeconds);
+    }
+
+    void applyTacticalPosition(WorldPosition center) {
+        position = center;
+    }
+
+    boolean checkDetection(WorldPosition hunterPosition) {
         if (hunterPosition == null || !Double.isFinite(hunterPosition.getX())
             || !Double.isFinite(hunterPosition.getY())) {
             throw new IllegalArgumentException("Hunter position must be present and finite");
@@ -85,10 +94,15 @@ public final class CreaturePatrolState {
         if (!Double.isFinite(distance)) {
             throw new IllegalArgumentException("Hunter distance must be finite");
         }
+        boolean previouslyAlerted = alerted;
         if (distance <= detectionRadius && geometry.hasLineOfSight(position, hunterPosition)) {
             alerted = true;
             lastSeenHunterPosition = hunterPosition;
         }
+        return !previouslyAlerted && alerted;
+    }
+
+    void advancePatrol(double deltaSeconds) {
         if (alerted) return;
 
         double remaining = deltaSeconds;

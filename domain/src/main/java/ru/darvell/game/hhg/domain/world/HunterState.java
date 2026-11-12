@@ -33,6 +33,10 @@ public final class HunterState {
         return radius;
     }
 
+    void applyTacticalPosition(WorldPosition center) {
+        position = center;
+    }
+
     public void move(
         double directionX,
         double directionY,
