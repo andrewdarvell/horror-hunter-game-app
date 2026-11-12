@@ -1,5 +1,6 @@
 package ru.darvell.game.hhg;
 
+import java.util.Arrays;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.Screen;
@@ -9,8 +10,11 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import ru.darvell.game.hhg.domain.world.CellCoordinates;
 import ru.darvell.game.hhg.domain.world.HunterState;
+import ru.darvell.game.hhg.domain.world.StaticAabb;
 import ru.darvell.game.hhg.domain.world.TacticalGrid;
+import ru.darvell.game.hhg.domain.world.WorldGeometry;
 import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 /** First screen of the application. Displayed after the application is created. */
@@ -19,17 +23,27 @@ public class FirstScreen implements Screen {
     private static final float VIRTUAL_HEIGHT = 15.0f;
     private static final double PROTOTYPE_MOVEMENT_SPEED = 5.0;
     private static final double PROTOTYPE_CELL_SIZE = 2.0;
-    private static final float HUNTER_RADIUS = 0.4f;
+    private static final double PROTOTYPE_HUNTER_RADIUS = 0.4;
 
     private final HunterState hunter;
     private final TacticalGrid tacticalGrid;
+    private final WorldGeometry worldGeometry;
     private final OrthographicCamera camera;
     private final Viewport viewport;
     private final ShapeRenderer shapeRenderer;
     private boolean debugGridVisible = true;
 
     public FirstScreen() {
-        hunter = new HunterState(new WorldPosition(0.0, 0.0), PROTOTYPE_MOVEMENT_SPEED);
+        worldGeometry = new WorldGeometry(Arrays.asList(
+            new StaticAabb(3.0, -3.0, 1.0, 6.0),
+            new StaticAabb(-5.0, 2.0, 4.0, 1.0),
+            new StaticAabb(-3.0, -4.0, 2.0, 2.0)
+        ));
+        hunter = new HunterState(
+            new WorldPosition(0.0, 0.0), PROTOTYPE_MOVEMENT_SPEED, PROTOTYPE_HUNTER_RADIUS);
+        if (!worldGeometry.isCirclePositionValid(hunter.getPosition(), hunter.getRadius())) {
+            throw new IllegalStateException("Initial hunter position must be valid");
+        }
         tacticalGrid = new TacticalGrid(0.0, 0.0, PROTOTYPE_CELL_SIZE);
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
@@ -53,7 +67,12 @@ public class FirstScreen implements Screen {
     private void updateHunter(float delta) {
         double directionX = axis(Input.Keys.A, Input.Keys.D);
         double directionY = axis(Input.Keys.S, Input.Keys.W);
-        hunter.move(directionX, directionY, delta);
+        hunter.move(directionX, directionY, delta, worldGeometry);
+    }
+
+    private boolean isCellPassable(int cellX, int cellY) {
+        return tacticalGrid.isCellPassable(
+            new CellCoordinates(cellX, cellY), hunter.getRadius(), worldGeometry);
     }
 
     private static int axis(int negativeKey, int positiveKey) {
@@ -82,9 +101,23 @@ public class FirstScreen implements Screen {
             drawDebugGrid();
         }
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(Color.SLATE);
+        for (StaticAabb obstacle : worldGeometry.getObstacles()) {
+            shapeRenderer.rect(
+                (float) obstacle.getX(),
+                (float) obstacle.getY(),
+                (float) obstacle.getWidth(),
+                (float) obstacle.getHeight()
+            );
+        }
         shapeRenderer.setColor(Color.GOLDENROD);
         WorldPosition position = hunter.getPosition();
-        shapeRenderer.circle((float) position.getX(), (float) position.getY(), HUNTER_RADIUS, 32);
+        shapeRenderer.circle(
+            (float) position.getX(),
+            (float) position.getY(),
+            (float) hunter.getRadius(),
+            32
+        );
         shapeRenderer.end();
     }
 
@@ -96,6 +129,32 @@ public class FirstScreen implements Screen {
         double minY = camera.position.y - halfHeight;
         double maxY = camera.position.y + halfHeight;
         double cellSize = tacticalGrid.getCellSize();
+        int minCellX = (int) Math.floor(
+            (minX - tacticalGrid.getOriginX()) / cellSize);
+        int maxCellX = (int) Math.floor(
+            (maxX - tacticalGrid.getOriginX()) / cellSize);
+        int minCellY = (int) Math.floor(
+            (minY - tacticalGrid.getOriginY()) / cellSize);
+        int maxCellY = (int) Math.floor(
+            (maxY - tacticalGrid.getOriginY()) / cellSize);
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0.32f, 0.08f, 0.08f, 1.0f);
+        for (int cellX = minCellX; cellX <= maxCellX; cellX++) {
+            for (int cellY = minCellY; cellY <= maxCellY; cellY++) {
+                if (!isCellPassable(cellX, cellY)) {
+                    double worldX = tacticalGrid.getOriginX() + cellX * cellSize;
+                    double worldY = tacticalGrid.getOriginY() + cellY * cellSize;
+                    shapeRenderer.rect(
+                        (float) worldX,
+                        (float) worldY,
+                        (float) cellSize,
+                        (float) cellSize
+                    );
+                }
+            }
+        }
+        shapeRenderer.end();
 
         double firstX = firstGridLine(minX, tacticalGrid.getOriginX(), cellSize);
         double firstY = firstGridLine(minY, tacticalGrid.getOriginY(), cellSize);

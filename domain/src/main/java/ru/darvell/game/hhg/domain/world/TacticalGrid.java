@@ -41,4 +41,18 @@ public final class TacticalGrid {
         double centerY = originY + (cell.getY() + 0.5) * cellSize;
         return new WorldPosition(centerX, centerY);
     }
+
+    public boolean isCellPassable(
+        CellCoordinates cell,
+        double hunterRadius,
+        WorldGeometry geometry
+    ) {
+        if (cell == null) {
+            throw new IllegalArgumentException("Cell coordinates must not be null");
+        }
+        if (geometry == null) {
+            throw new IllegalArgumentException("World geometry must not be null");
+        }
+        return geometry.isCirclePositionValid(cellToWorldCenter(cell), hunterRadius);
+    }
 }
