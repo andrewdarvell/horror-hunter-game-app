@@ -1,0 +1,21 @@
+gradle.projectsEvaluated {
+  def desktop = gradle.rootProject.project(':lwjgl3')
+  def qa = gradle.rootProject.file('openspec/changes/basic-tactical-movement/verification')
+  desktop.tasks.register('compileMovementSmoke', JavaCompile) {
+    dependsOn desktop.tasks.named('classes')
+    source = desktop.fileTree(qa) { include '*.java' }
+    classpath = desktop.sourceSets.main.runtimeClasspath
+    destinationDirectory = desktop.layout.buildDirectory.dir('movementSmoke')
+    options.release = 8
+  }
+  ['MovementSmoke', 'TransitionSmoke'].each { smoke ->
+    desktop.tasks.register(smoke, JavaExec) {
+      dependsOn desktop.tasks.named('compileMovementSmoke')
+      classpath = desktop.sourceSets.main.runtimeClasspath + desktop.files(desktop.layout.buildDirectory.dir('movementSmoke'))
+      mainClass = 'ru.darvell.game.hhg.' + smoke
+      workingDir = desktop.rootProject.file('assets')
+      jvmArgs '--enable-native-access=ALL-UNNAMED', '--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED'
+      environment '__GL_THREADED_OPTIMIZATIONS', '0'
+    }
+  }
+}

@@ -3,6 +3,8 @@ package ru.darvell.game.hhg;
 import java.util.Arrays;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputAdapter;
+import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
@@ -20,6 +22,7 @@ import ru.darvell.game.hhg.domain.world.WorldPosition;
 import ru.darvell.game.hhg.domain.scene.WorldSceneState;
 import ru.darvell.game.hhg.domain.scene.SceneMode;
 import ru.darvell.game.hhg.domain.tactical.TacticalEntryResult;
+import ru.darvell.game.hhg.domain.tactical.TacticalMoveResult;
 
 /** First screen of the application. Displayed after the application is created. */
 public class FirstScreen implements Screen {
@@ -38,6 +41,38 @@ public class FirstScreen implements Screen {
     private TacticalEntryTransition transition;
     private WorldPosition visualHunterPosition;
     private WorldPosition visualCreaturePosition;
+    private boolean transitionJustCreated;
+    private boolean pointerReady;
+    private boolean active;
+    private boolean primaryDown;
+    private InputProcessor previousInput;
+    private final InputAdapter pointerInput = new InputAdapter() {
+        @Override
+        public boolean touchDown(int x, int y, int pointer, int button) {
+            if (!active || pointer != 0 || button != Input.Buttons.LEFT) return false;
+            if (primaryDown) return true;
+            primaryDown = true;
+            if (scene.getMode() != SceneMode.TACTICAL || transition != null) return true;
+            CellCoordinates target = TacticalCellPicker.pick(viewport, tacticalGrid, x, y,
+                Gdx.graphics.getWidth(), Gdx.graphics.getHeight(), pointerReady);
+            if (target == null) return true;
+            WorldPosition start = scene.getHunterPosition();
+            if (scene.tryMoveHunterTo(target) == TacticalMoveResult.SUCCESS) {
+                transition = TacticalEntryTransition.forHunterMove(start, scene.getHunterPosition(),
+                    scene.getCreaturePosition());
+                transitionJustCreated = true;
+                selectVisualPositions();
+            }
+            return true;
+        }
+
+        @Override
+        public boolean touchUp(int x, int y, int pointer, int button) {
+            if (pointer != 0 || button != Input.Buttons.LEFT) return false;
+            primaryDown = false;
+            return active;
+        }
+    };
     private boolean debugGridVisible = true;
 
     public FirstScreen() {
@@ -77,7 +112,11 @@ public class FirstScreen implements Screen {
 
     @Override
     public void show() {
-        // Prepare your screen here.
+        if (active) return;
+        previousInput = Gdx.input.getInputProcessor();
+        Gdx.input.setInputProcessor(pointerInput);
+        primaryDown = false;
+        active = true;
     }
 
     @Override
@@ -104,9 +143,12 @@ public class FirstScreen implements Screen {
             && outcome == TacticalEntryResult.Outcome.SUCCESS) {
             transition = new TacticalEntryTransition(hunterStart, creatureStart,
                 scene.getHunterPosition(), scene.getCreaturePosition());
-            // delta относится к update до запуска: первый кадр обязан показать start.
-        } else if (transition != null) {
-            transition.advance(safeDelta);
+            transitionJustCreated = true;
+        }
+        if (transition != null) {
+            // Интервал до создания transition не относится к его первому кадру.
+            if (transitionJustCreated) transitionJustCreated = false;
+            else transition.advance(safeDelta);
             if (transition.isComplete()) transition = null;
         }
         selectVisualPositions();
@@ -268,7 +310,8 @@ public class FirstScreen implements Screen {
 
     @Override
     public void resize(int width, int height) {
-        if (width <= 0 || height <= 0) return;
+        pointerReady = width > 0 && height > 0;
+        if (!pointerReady) return;
         viewport.update(width, height, false);
         followHunter();
     }
@@ -285,11 +328,17 @@ public class FirstScreen implements Screen {
 
     @Override
     public void hide() {
-        // This method is called when another screen replaces this one.
+        if (active && Gdx.input.getInputProcessor() == pointerInput) {
+            Gdx.input.setInputProcessor(previousInput);
+        }
+        active = false;
+        primaryDown = false;
+        previousInput = null;
     }
 
     @Override
     public void dispose() {
-        shapeRenderer.dispose();
+        hide();
+        if (shapeRenderer != null) shapeRenderer.dispose();
     }
 }
