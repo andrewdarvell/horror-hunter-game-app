@@ -17,6 +17,66 @@ class TacticalEntryPlannerTest {
     private final TacticalEntryPlanner planner = new TacticalEntryPlanner();
 
     @Test
+    void unitGridKeepsDistinctCellsAndHunterPriorityWithDemoRadii() {
+        TacticalGrid unit = new TacticalGrid(0, 0, 1);
+        TacticalEntryResult distinct = planner.plan(new WorldPosition(-0.1, 0.2), 0.4,
+            new WorldPosition(5, 0), 0.3, unit, WorldGeometry.empty());
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, distinct.getOutcome());
+        assertEquals(new CellCoordinates(-1, 0), distinct.getPlacement().getHunterCell());
+        assertEquals(new WorldPosition(-0.5, 0.5), distinct.getHunterCenter());
+        assertEquals(new WorldPosition(5.5, 0.5), distinct.getCreatureCenter());
+
+        WorldPosition shared = new WorldPosition(0.5, 0.5);
+        TacticalEntryResult tie = planner.plan(shared, 0.4, shared, 0.3, unit, WorldGeometry.empty());
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, tie.getOutcome());
+        assertEquals(new CellCoordinates(0, 0), tie.getPlacement().getHunterCell());
+        assertEquals(new CellCoordinates(-1, 0), tie.getPlacement().getCreatureCell());
+        assertTrue(WorldGeometry.empty().isCirclePositionValid(tie.getHunterCenter(), 0.4));
+        assertTrue(WorldGeometry.empty().isCirclePositionValid(tie.getCreatureCenter(), 0.3));
+    }
+
+    @Test
+    void unitGridChecksBlockedCentersFullPathAndEachDemoRadius() {
+        TacticalGrid unit = new TacticalGrid(0, 0, 1);
+        CellCoordinates target = new CellCoordinates(0, 0);
+        WorldPosition from = new WorldPosition(-0.5, 0.5);
+        WorldGeometry nearPath = geometry(new StaticAabb(-0.05, 0.85, 0.1, 0.1));
+        assertTrue(nearPath.hasLineOfSight(from, unit.cellToWorldCenter(target)));
+        assertTrue(unit.isCellPassable(target, 0.4, nearPath));
+        assertTrue(TacticalEntryPlanner.candidates(from, 0.3, unit.worldToCell(from), unit, nearPath)
+            .stream().anyMatch(c -> c.cell.equals(target)));
+        assertFalse(TacticalEntryPlanner.candidates(from, 0.4, unit.worldToCell(from), unit, nearPath)
+            .stream().anyMatch(c -> c.cell.equals(target)));
+
+        WorldGeometry wall = geometry(new StaticAabb(0.04, -5, 0.01, 10));
+        WorldPosition start = new WorldPosition(-0.4, 0.5);
+        assertTrue(wall.isCirclePositionValid(start, 0.4));
+        assertTrue(unit.isCellPassable(target, 0.4, wall));
+        assertFalse(TacticalEntryPlanner.candidates(start, 0.4, unit.worldToCell(start), unit, wall)
+            .stream().anyMatch(c -> c.cell.getX() >= 0));
+
+        WorldGeometry blocked = geometry(new StaticAabb(0.45, 0.45, 0.1, 0.1));
+        WorldPosition origin = new WorldPosition(0, 0);
+        assertTrue(blocked.isCirclePositionValid(origin, 0.4));
+        assertFalse(TacticalEntryPlanner.candidates(origin, 0.4, unit.worldToCell(origin), unit, blocked)
+            .stream().anyMatch(c -> c.cell.equals(target)));
+    }
+
+    @Test
+    void unitGridDoesNotExpandSearchWhenAllNineCentersAreBlocked() {
+        TacticalGrid unit = new TacticalGrid(0, 0, 1);
+        List<StaticAabb> boxes = new ArrayList<>();
+        for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) {
+            boxes.add(new StaticAabb(x + 0.45, y + 0.45, 0.1, 0.1));
+        }
+        WorldGeometry blocked = new WorldGeometry(boxes);
+        assertTrue(unit.isCellPassable(new CellCoordinates(2, 0), 0.4, blocked));
+        TacticalEntryResult result = planner.plan(new WorldPosition(0, 0), 0.4,
+            new WorldPosition(5, 0), 0.3, unit, blocked);
+        assertEquals(TacticalEntryResult.Outcome.NO_VALID_PLACEMENT, result.getOutcome());
+    }
+
+    @Test
     void preservesDistinctSourceCellsIncludingNegativeBoundaries() {
         for (double x : new double[] {-2.001, -2, -0.001, 0, 1.999, 2}) {
             WorldPosition h = new WorldPosition(x, 0.2);
