@@ -1,4 +1,4 @@
-package ru.darvell.game.hhg.domain.world;
+package ru.darvell.game.hhg.domain.tactical;
 
 /** Полная неизменяемая занятость двух клеток. */
 public final class TacticalPlacement {

@@ -1,4 +1,7 @@
-package ru.darvell.game.hhg.domain.world;
+package ru.darvell.game.hhg.domain.actor;
+
+import ru.darvell.game.hhg.domain.world.WorldGeometry;
+import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -80,11 +83,37 @@ public final class CreaturePatrolState {
         advancePatrol(deltaSeconds);
     }
 
-    void applyTacticalPosition(WorldPosition center) {
-        position = center;
+    /** Независимая копия текущего состояния, без повторной инициализации. */
+    public CreaturePatrolState copy() {
+        return new CreaturePatrolState(this);
     }
 
-    boolean checkDetection(WorldPosition hunterPosition) {
+    /** Готовит отдельное состояние; допустимость размещения сцены проверяет planner. */
+    public CreaturePatrolState withTacticalPosition(WorldPosition center) {
+        if (center == null || !Double.isFinite(center.getX()) || !Double.isFinite(center.getY())) {
+            throw new IllegalArgumentException("Tactical center must be present and finite");
+        }
+        CreaturePatrolState copy = copy();
+        copy.position = center;
+        return copy;
+    }
+
+    private CreaturePatrolState(CreaturePatrolState source) {
+        route = source.route;
+        geometry = source.geometry;
+        movementSpeed = source.movementSpeed;
+        radius = source.radius;
+        pauseSeconds = source.pauseSeconds;
+        detectionRadius = source.detectionRadius;
+        alerted = source.alerted;
+        lastSeenHunterPosition = source.lastSeenHunterPosition;
+        position = source.position;
+        targetIndex = source.targetIndex;
+        direction = source.direction;
+        waitRemaining = source.waitRemaining;
+    }
+
+    public boolean checkDetection(WorldPosition hunterPosition) {
         if (hunterPosition == null || !Double.isFinite(hunterPosition.getX())
             || !Double.isFinite(hunterPosition.getY())) {
             throw new IllegalArgumentException("Hunter position must be present and finite");
@@ -102,7 +131,11 @@ public final class CreaturePatrolState {
         return !previouslyAlerted && alerted;
     }
 
-    void advancePatrol(double deltaSeconds) {
+    /** Продвигает только патруль; обнаружение вызывается координатором отдельно. */
+    public void advancePatrol(double deltaSeconds) {
+        if (!Double.isFinite(deltaSeconds) || deltaSeconds < 0.0) {
+            throw new IllegalArgumentException("Delta time must be finite and non-negative");
+        }
         if (alerted) return;
 
         double remaining = deltaSeconds;

@@ -1,4 +1,7 @@
-package ru.darvell.game.hhg.domain.world;
+package ru.darvell.game.hhg.domain.tactical;
+
+import ru.darvell.game.hhg.domain.world.WorldGeometry;
+import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 /** Фиксированная тактическая сетка, выраженная в мировых единицах. */
 public final class TacticalGrid {

@@ -10,16 +10,16 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
-import ru.darvell.game.hhg.domain.world.CellCoordinates;
-import ru.darvell.game.hhg.domain.world.CreaturePatrolState;
-import ru.darvell.game.hhg.domain.world.HunterState;
+import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
+import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
+import ru.darvell.game.hhg.domain.actor.HunterState;
 import ru.darvell.game.hhg.domain.world.StaticAabb;
-import ru.darvell.game.hhg.domain.world.TacticalGrid;
+import ru.darvell.game.hhg.domain.tactical.TacticalGrid;
 import ru.darvell.game.hhg.domain.world.WorldGeometry;
 import ru.darvell.game.hhg.domain.world.WorldPosition;
-import ru.darvell.game.hhg.domain.world.WorldSceneState;
-import ru.darvell.game.hhg.domain.world.SceneMode;
-import ru.darvell.game.hhg.domain.world.TacticalEntryResult;
+import ru.darvell.game.hhg.domain.scene.WorldSceneState;
+import ru.darvell.game.hhg.domain.scene.SceneMode;
+import ru.darvell.game.hhg.domain.tactical.TacticalEntryResult;
 
 /** First screen of the application. Displayed after the application is created. */
 public class FirstScreen implements Screen {
