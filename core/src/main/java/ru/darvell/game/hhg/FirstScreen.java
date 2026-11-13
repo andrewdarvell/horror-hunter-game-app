@@ -26,7 +26,7 @@ public class FirstScreen implements Screen {
     private static final float VIRTUAL_WIDTH = 20.0f;
     private static final float VIRTUAL_HEIGHT = 15.0f;
     private static final double PROTOTYPE_MOVEMENT_SPEED = 5.0;
-    private static final double PROTOTYPE_CELL_SIZE = 2.0;
+    private static final double PROTOTYPE_CELL_SIZE = 1.0;
     private static final double PROTOTYPE_HUNTER_RADIUS = 0.4;
 
     private final WorldSceneState scene;
@@ -35,6 +35,9 @@ public class FirstScreen implements Screen {
     private final OrthographicCamera camera;
     private final Viewport viewport;
     private final ShapeRenderer shapeRenderer;
+    private TacticalEntryTransition transition;
+    private WorldPosition visualHunterPosition;
+    private WorldPosition visualCreaturePosition;
     private boolean debugGridVisible = true;
 
     public FirstScreen() {
@@ -57,6 +60,19 @@ public class FirstScreen implements Screen {
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
         shapeRenderer = new ShapeRenderer();
+        selectVisualPositions();
+    }
+
+    /** Позволяет проверять обновления и resize без создания графических ресурсов. */
+    FirstScreen(WorldSceneState scene, TacticalGrid tacticalGrid, WorldGeometry worldGeometry,
+                Viewport viewport, ShapeRenderer shapeRenderer) {
+        this.scene = scene;
+        this.tacticalGrid = tacticalGrid;
+        this.worldGeometry = worldGeometry;
+        this.viewport = viewport;
+        this.camera = (OrthographicCamera) viewport.getCamera();
+        this.shapeRenderer = shapeRenderer;
+        selectVisualPositions();
     }
 
     @Override
@@ -66,7 +82,7 @@ public class FirstScreen implements Screen {
 
     @Override
     public void render(float delta) {
-        TacticalEntryResult.Outcome outcome = scene.update(axis(Input.Keys.A, Input.Keys.D),
+        TacticalEntryResult.Outcome outcome = updateScene(axis(Input.Keys.A, Input.Keys.D),
             axis(Input.Keys.S, Input.Keys.W), delta, Gdx.input.isKeyJustPressed(Input.Keys.T));
         if (outcome == TacticalEntryResult.Outcome.NO_VALID_PLACEMENT
             || outcome == TacticalEntryResult.Outcome.INVALID_INPUT) {
@@ -76,6 +92,40 @@ public class FirstScreen implements Screen {
         viewport.apply();
         followHunter();
         drawScene();
+    }
+
+    TacticalEntryResult.Outcome updateScene(double x, double y, double delta, boolean manualEntry) {
+        SceneMode previousMode = scene.getMode();
+        WorldPosition hunterStart = scene.getHunterPosition();
+        WorldPosition creatureStart = scene.getCreaturePosition();
+        double safeDelta = Double.isFinite(delta) && delta >= 0.0 ? delta : 0.0;
+        TacticalEntryResult.Outcome outcome = scene.update(x, y, safeDelta, manualEntry);
+        if (previousMode == SceneMode.EXPLORATION && scene.getMode() == SceneMode.TACTICAL
+            && outcome == TacticalEntryResult.Outcome.SUCCESS) {
+            transition = new TacticalEntryTransition(hunterStart, creatureStart,
+                scene.getHunterPosition(), scene.getCreaturePosition());
+            // delta относится к update до запуска: первый кадр обязан показать start.
+        } else if (transition != null) {
+            transition.advance(safeDelta);
+            if (transition.isComplete()) transition = null;
+        }
+        selectVisualPositions();
+        return outcome;
+    }
+
+    private void selectVisualPositions() {
+        visualHunterPosition = transition == null
+            ? scene.getHunterPosition() : transition.getHunterPosition();
+        visualCreaturePosition = transition == null
+            ? scene.getCreaturePosition() : transition.getCreaturePosition();
+    }
+
+    WorldPosition getVisualHunterPosition() {
+        return visualHunterPosition;
+    }
+
+    WorldPosition getVisualCreaturePosition() {
+        return visualCreaturePosition;
     }
 
     private boolean isCellPassable(int cellX, int cellY) {
@@ -91,7 +141,7 @@ public class FirstScreen implements Screen {
     }
 
     private void followHunter() {
-        WorldPosition position = scene.getHunterPosition();
+        WorldPosition position = visualHunterPosition;
         camera.position.set((float) position.getX(), (float) position.getY(), 0.0f);
         camera.update();
     }
@@ -119,7 +169,7 @@ public class FirstScreen implements Screen {
             );
         }
         shapeRenderer.setColor(Color.GOLDENROD);
-        WorldPosition position = scene.getHunterPosition();
+        WorldPosition position = visualHunterPosition;
         shapeRenderer.circle(
             (float) position.getX(),
             (float) position.getY(),
@@ -127,7 +177,7 @@ public class FirstScreen implements Screen {
             32
         );
         shapeRenderer.setColor(scene.isCreatureAlerted() ? Color.RED : Color.CYAN);
-        WorldPosition creaturePosition = scene.getCreaturePosition();
+        WorldPosition creaturePosition = visualCreaturePosition;
         shapeRenderer.circle(
             (float) creaturePosition.getX(),
             (float) creaturePosition.getY(),
@@ -219,7 +269,8 @@ public class FirstScreen implements Screen {
     @Override
     public void resize(int width, int height) {
         if (width <= 0 || height <= 0) return;
-        viewport.update(width, height, true);
+        viewport.update(width, height, false);
+        followHunter();
     }
 
     @Override

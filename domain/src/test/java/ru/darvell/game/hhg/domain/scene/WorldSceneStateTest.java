@@ -19,6 +19,97 @@ class WorldSceneStateTest {
     private final TacticalGrid grid = new TacticalGrid(0, 0, 2);
 
     @Test
+    void unitGridDemoManualAndAutomaticEntryAreAtomicAndFrozen() {
+        TacticalGrid unit = new TacticalGrid(0, 0, 1);
+        WorldGeometry geometry = new WorldGeometry(Arrays.asList(
+            new StaticAabb(3, -3, 1, 6), new StaticAabb(-5, 2, 4, 1), new StaticAabb(-3, -4, 2, 2)));
+        for (boolean manual : new boolean[] {true, false}) {
+            WorldSceneState scene = demoScene(unit, geometry);
+            if (!manual) {
+                // Обход нижнего края стены: вниз, вправо, вверх к открытой LOS.
+                assertNull(scene.update(0, -1, 0.8, false));
+                assertNull(scene.update(1, 0, 1.0, false));
+                assertEquals(new WorldPosition(5, -4), scene.getHunterPosition());
+                assertFalse(scene.isCreatureAlerted());
+                assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.update(0, 1, 0.4, false));
+                assertEquals(new WorldPosition(5, -2), scene.getLastSeenHunterPosition());
+                assertTrue(scene.isCreatureAlerted());
+            } else {
+                assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.update(0, 0, 0, true));
+                assertFalse(scene.isCreatureAlerted());
+                assertNull(scene.getLastSeenHunterPosition());
+            }
+            assertEquals(SceneMode.TACTICAL, scene.getMode());
+            assertNotEquals(scene.getPlacement().getHunterCell(), scene.getPlacement().getCreatureCell());
+            assertEquals(unit.cellToWorldCenter(scene.getPlacement().getHunterCell()), scene.getHunterPosition());
+            assertEquals(unit.cellToWorldCenter(scene.getPlacement().getCreatureCell()), scene.getCreaturePosition());
+            assertTrue(geometry.isCirclePositionValid(scene.getHunterPosition(), 0.4));
+            assertTrue(geometry.isCirclePositionValid(scene.getCreaturePosition(), 0.3));
+            Object[] frozen = snapshot(scene);
+            assertNull(scene.update(1, -1, 1000, false));
+            assertEquals(TacticalEntryResult.Outcome.ALREADY_TACTICAL, scene.update(1, 1, 1, true));
+            assertArrayEquals(frozen, snapshot(scene));
+        }
+    }
+
+    @Test
+    void unitGridFailedEntryDoesNotPartiallyCommitAndManualRetryUsesCurrentPosition() {
+        TacticalGrid unit = new TacticalGrid(0, 0, 1);
+        List<StaticAabb> boxes = new ArrayList<>();
+        for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) {
+            boxes.add(new StaticAabb(x + 0.45, y + 0.45, 0.1, 0.1));
+        }
+        WorldGeometry geometry = new WorldGeometry(boxes);
+        CreaturePatrolState creature = new CreaturePatrolState(Arrays.asList(
+            new WorldPosition(3, 0), new WorldPosition(3, 1)), 2, 0.3, 0.5, 3, geometry);
+        WorldSceneState scene = new WorldSceneState(new HunterState(new WorldPosition(0, 0), 1, 0.4),
+            creature, unit, geometry);
+        assertEquals(TacticalEntryResult.Outcome.NO_VALID_PLACEMENT, scene.update(0, 0, 0, false));
+        assertEquals(SceneMode.EXPLORATION, scene.getMode());
+        assertNull(scene.getPlacement());
+        assertEquals(new WorldPosition(0, 0), scene.getHunterPosition());
+        assertEquals(new WorldPosition(3, 0), scene.getCreaturePosition());
+        assertTrue(scene.isCreatureAlerted());
+        assertEquals(new WorldPosition(0, 0), scene.getLastSeenHunterPosition());
+        assertNull(scene.update(1, 0, 2, false));
+        assertEquals(SceneMode.EXPLORATION, scene.getMode());
+        assertEquals(new WorldPosition(2, 0), scene.getHunterPosition());
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.update(0, 0, 0, true));
+        assertEquals(new CellCoordinates(2, 0), scene.getPlacement().getHunterCell());
+        assertEquals(new WorldPosition(2, 0), scene.getLastSeenHunterPosition());
+    }
+
+    @Test
+    void detectionRangeAndLosAreIndependentOfGridSize() {
+        for (double cellSize : new double[] {1, 2}) {
+            for (WorldPosition hunter : Arrays.asList(new WorldPosition(3, 0),
+                new WorldPosition(Math.nextUp(3.0), 0))) {
+                WorldSceneState scene = detectionScene(hunter, new TacticalGrid(0, 0, cellSize), WorldGeometry.empty());
+                boolean onBoundary = hunter.getX() == 3.0;
+                assertEquals(onBoundary ? TacticalEntryResult.Outcome.SUCCESS : null, scene.update(0, 0, 0, false));
+                assertEquals(onBoundary, scene.isCreatureAlerted());
+            }
+            WorldGeometry wall = new WorldGeometry(Arrays.asList(new StaticAabb(1, -1, 0.1, 2)));
+            WorldSceneState blocked = detectionScene(new WorldPosition(3, 0), new TacticalGrid(0, 0, cellSize), wall);
+            assertNull(blocked.update(0, 0, 0, false));
+            assertFalse(blocked.isCreatureAlerted());
+            assertEquals(SceneMode.EXPLORATION, blocked.getMode());
+        }
+    }
+
+    private static WorldSceneState demoScene(TacticalGrid grid, WorldGeometry geometry) {
+        return new WorldSceneState(new HunterState(new WorldPosition(0, 0), 5, 0.4),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(5, 0), new WorldPosition(5, 1)),
+                2, 0.3, 0.5, 3, geometry), grid, geometry);
+    }
+
+    private static WorldSceneState detectionScene(WorldPosition hunter, TacticalGrid grid, WorldGeometry geometry) {
+        return new WorldSceneState(new HunterState(hunter, 5, 0.4),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(0, 0), new WorldPosition(0, 1)),
+                2, 0.3, 0.5, 3, geometry), grid, geometry);
+    }
+
+    @Test
     void manualEntryFreezesBothActorsWithoutInventingDetection() {
         CreaturePatrolState creature = creature(new WorldPosition(5, 0), 0.1, WorldGeometry.empty());
         WorldSceneState scene = scene(new WorldPosition(0, 0), creature, WorldGeometry.empty());
