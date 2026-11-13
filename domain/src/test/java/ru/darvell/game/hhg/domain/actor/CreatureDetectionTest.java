@@ -1,4 +1,8 @@
-package ru.darvell.game.hhg.domain.world;
+package ru.darvell.game.hhg.domain.actor;
+
+import ru.darvell.game.hhg.domain.world.StaticAabb;
+import ru.darvell.game.hhg.domain.world.WorldGeometry;
+import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;

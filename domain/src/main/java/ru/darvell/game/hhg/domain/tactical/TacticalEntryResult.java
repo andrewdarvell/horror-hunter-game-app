@@ -1,4 +1,6 @@
-package ru.darvell.game.hhg.domain.world;
+package ru.darvell.game.hhg.domain.tactical;
+
+import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 /** План содержит только проверенные значения и не меняет участников. */
 public final class TacticalEntryResult {

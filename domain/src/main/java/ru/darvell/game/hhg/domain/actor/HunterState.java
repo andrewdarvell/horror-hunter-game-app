@@ -1,4 +1,7 @@
-package ru.darvell.game.hhg.domain.world;
+package ru.darvell.game.hhg.domain.actor;
+
+import ru.darvell.game.hhg.domain.world.WorldGeometry;
+import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 /** Минимальное состояние охотника и правило свободного перемещения. */
 public final class HunterState {
@@ -33,8 +36,25 @@ public final class HunterState {
         return radius;
     }
 
-    void applyTacticalPosition(WorldPosition center) {
-        position = center;
+    /** Независимая копия текущего состояния, без повторной инициализации. */
+    public HunterState copy() {
+        return new HunterState(this);
+    }
+
+    /** Готовит отдельное состояние; допустимость размещения сцены проверяет planner. */
+    public HunterState withTacticalPosition(WorldPosition center) {
+        if (center == null || !Double.isFinite(center.getX()) || !Double.isFinite(center.getY())) {
+            throw new IllegalArgumentException("Tactical center must be present and finite");
+        }
+        HunterState copy = copy();
+        copy.position = center;
+        return copy;
+    }
+
+    private HunterState(HunterState source) {
+        position = source.position;
+        movementSpeed = source.movementSpeed;
+        radius = source.radius;
     }
 
     public void move(

@@ -1,9 +1,18 @@
-package ru.darvell.game.hhg.domain.world;
+package ru.darvell.game.hhg.domain.scene;
 
-/** Владеет участниками; после передачи в конструктор их нельзя обновлять снаружи. */
+import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
+import ru.darvell.game.hhg.domain.actor.HunterState;
+import ru.darvell.game.hhg.domain.tactical.TacticalEntryPlanner;
+import ru.darvell.game.hhg.domain.tactical.TacticalEntryResult;
+import ru.darvell.game.hhg.domain.tactical.TacticalGrid;
+import ru.darvell.game.hhg.domain.tactical.TacticalPlacement;
+import ru.darvell.game.hhg.domain.world.WorldGeometry;
+import ru.darvell.game.hhg.domain.world.WorldPosition;
+
+/** Владеет независимыми копиями участников; наружу выдаёт только значения состояния. */
 public final class WorldSceneState {
-    private final HunterState hunter;
-    private final CreaturePatrolState creature;
+    private HunterState hunter;
+    private CreaturePatrolState creature;
     private final TacticalGrid grid;
     private final WorldGeometry geometry;
     private final TacticalEntryPlanner planner = new TacticalEntryPlanner();
@@ -15,8 +24,8 @@ public final class WorldSceneState {
         if (hunter == null || creature == null || grid == null || geometry == null) {
             throw new IllegalArgumentException("Scene components must be present");
         }
-        this.hunter = hunter;
-        this.creature = creature;
+        this.hunter = hunter.copy();
+        this.creature = creature.copy();
         this.grid = grid;
         this.geometry = geometry;
     }
@@ -42,10 +51,13 @@ public final class WorldSceneState {
         TacticalEntryResult result = planner.plan(hunter.getPosition(), hunter.getRadius(),
             creature.getPosition(), creature.getRadius(), grid, geometry);
         if (result.getOutcome() == TacticalEntryResult.Outcome.SUCCESS) {
-            // После расчёта остаются только присваивания: без проверок и callbacks.
-            hunter.applyTacticalPosition(result.getHunterCenter());
-            creature.applyTacticalPosition(result.getCreatureCenter());
-            placement = result.getPlacement();
+            HunterState preparedHunter = hunter.withTacticalPosition(result.getHunterCenter());
+            CreaturePatrolState preparedCreature = creature.withTacticalPosition(result.getCreatureCenter());
+            TacticalPlacement preparedPlacement = result.getPlacement();
+            // Публикация только после полной подготовки: без вызовов, проверок и callbacks.
+            hunter = preparedHunter;
+            creature = preparedCreature;
+            placement = preparedPlacement;
             mode = SceneMode.TACTICAL;
         }
         return result.getOutcome();
