@@ -2,6 +2,8 @@ package ru.darvell.game.hhg.domain.scene;
 
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
 import ru.darvell.game.hhg.domain.actor.HunterState;
+import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
+import ru.darvell.game.hhg.domain.tactical.TacticalMoveResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalEntryPlanner;
 import ru.darvell.game.hhg.domain.tactical.TacticalEntryResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalGrid;
@@ -61,6 +63,34 @@ public final class WorldSceneState {
             mode = SceneMode.TACTICAL;
         }
         return result.getOutcome();
+    }
+
+    /** Проверки и подготовка предшествуют публикации в однопоточной сцене. */
+    public TacticalMoveResult tryMoveHunterTo(CellCoordinates target) {
+        if (mode != SceneMode.TACTICAL) return TacticalMoveResult.NOT_TACTICAL;
+        if (target == null) return TacticalMoveResult.INVALID_INPUT;
+        CellCoordinates current = placement.getHunterCell();
+        if (target.equals(current)) return TacticalMoveResult.SAME_CELL;
+        long dx = (long) target.getX() - current.getX();
+        long dy = (long) target.getY() - current.getY();
+        if (Math.max(Math.abs(dx), Math.abs(dy)) != 1) return TacticalMoveResult.NOT_ADJACENT;
+        if (target.equals(placement.getCreatureCell())) return TacticalMoveResult.OCCUPIED;
+        WorldPosition center = grid.cellToWorldCenter(target);
+        double cellX = Math.floor((center.getX() - grid.getOriginX()) / grid.getCellSize());
+        double cellY = Math.floor((center.getY() - grid.getOriginY()) / grid.getCellSize());
+        if (!Double.isFinite(center.getX()) || !Double.isFinite(center.getY())
+            || cellX != target.getX() || cellY != target.getY()
+            || !Double.isFinite(Math.hypot(center.getX() - hunter.getPosition().getX(),
+                center.getY() - hunter.getPosition().getY()))) return TacticalMoveResult.INVALID_INPUT;
+        if (!geometry.isCirclePositionValid(center, hunter.getRadius())) return TacticalMoveResult.BLOCKED_CENTER;
+        if (!geometry.isCirclePathValid(hunter.getPosition(), center, hunter.getRadius())) {
+            return TacticalMoveResult.BLOCKED_PATH;
+        }
+        HunterState preparedHunter = hunter.withTacticalPosition(center);
+        TacticalPlacement preparedPlacement = new TacticalPlacement(target, placement.getCreatureCell());
+        hunter = preparedHunter;
+        placement = preparedPlacement;
+        return TacticalMoveResult.SUCCESS;
     }
 
     public SceneMode getMode() { return mode; }
