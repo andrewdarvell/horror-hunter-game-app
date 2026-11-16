@@ -1,8 +1,8 @@
 # combat-rhythm: verification реализации
 
-Implementation PR: [#24](https://github.com/andrewdarvell/horror-hunter-game-app/pull/24) (draft).
+Implementation PR: [#24](https://github.com/andrewdarvell/horror-hunter-game-app/pull/24) — merged; реализация находится в `main`.
 
-Статус: implementation подготовлена для review; ручная приёмка не завершена. G1–G6 утверждены. Main specs не синхронизированы, change не архивирован. Отдельная ветка `feat/combat-rhythm-implementation` основана на planning PR #23; пока #23 открыт, implementation PR направлен в `docs/combat-rhythm-planning`.
+По последующему прямому запросу владельца delta-specs `combat-rhythm` синхронизированы с main specs `tactical-attack` и `tactical-movement`. Change остаётся активным, не архивирован. Ручные проверки, перечисленные ниже, не выдаются за выполненные; их открытый статус сохранён. Результаты автоматических проверок ниже относятся к implementation PR.
 
 ## Изменения и архитектура
 
@@ -69,4 +69,4 @@ JUnit дополнительно проверяет W с соседнего вх
 | 9 | Автоматические tests и smoke выполнены; ручные W/D и production detection ещё не выполнены |
 | 10 | Domain без новых зависимостей, classes/APK, strict validation и diff check |
 
-До закрытия оставшейся ручной приёмки implementation PR остаётся draft. Архитектурное ревью planning #23 не подменяется фактом создания implementation PR.
+При подготовке implementation PR был draft из-за оставшихся ручных проверок. Позднее PR #23 и #24 смержены владельцем; текущий sync выполнен по отдельному запросу. Сам merge не является свидетельством выполнения ручных проверок.
