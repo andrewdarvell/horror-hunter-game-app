@@ -154,7 +154,9 @@ class FirstScreenTransitionTest {
 
     private static Object[] snapshot(WorldSceneState scene) {
         return new Object[] {scene.getMode(), scene.getPlacement(), scene.getHunterPosition(),
-            scene.getCreaturePosition(), scene.isCreatureAlerted(), scene.getLastSeenHunterPosition()};
+            scene.getCreaturePosition(), scene.isCreatureAlerted(), scene.getLastSeenHunterPosition(),
+            scene.getBiteState(), scene.getLastResolution(), scene.getHunterHealth(),
+            scene.getCreatureHealth(), scene.getTacticalTimeUnits()};
     }
 
     private static WorldPosition p(double x, double y) {

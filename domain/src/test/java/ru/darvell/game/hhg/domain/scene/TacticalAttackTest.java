@@ -19,11 +19,11 @@ class TacticalAttackTest {
         WorldSceneState s=scene(0,1,0,WorldGeometry.empty()); s.enterTactical();
         assertFalse(s.isCreatureAlerted());
         TacticalAttackResult a=s.tryAttackCreature(target);
-        assertEquals(Arrays.asList(TacticalAttackResult.Effect.BITE,TacticalAttackResult.Effect.HIT,TacticalAttackResult.Effect.BITE),a.getEffects());
-        assertEquals(2,s.getHunterHealth()); assertEquals(1,s.getCreatureHealth()); assertEquals(2,s.getTacticalTimeUnits());
+        assertEquals(Arrays.asList(TacticalAttackResult.Effect.BITE,TacticalAttackResult.Effect.HIT),a.getEffects());
+        assertEquals(3,s.getHunterHealth()); assertEquals(1,s.getCreatureHealth()); assertEquals(2,s.getTacticalTimeUnits());
         assertThrows(UnsupportedOperationException.class,()->a.getEffects().clear());
         s.tryAttackCreature(target);
-        assertEquals(1,s.getHunterHealth()); assertEquals(0,s.getCreatureHealth());
+        assertEquals(3,s.getHunterHealth()); assertEquals(0,s.getCreatureHealth());
         assertEquals(4,s.getTacticalTimeUnits()); assertFalse(s.getPlacement().creatureCell().isPresent());
         assertThrows(IllegalStateException.class,()->s.getPlacement().getCreatureCell());
         assertEquals(TARGET_DEFEATED,s.tryAttackCreature(target).getOutcome());
@@ -54,9 +54,9 @@ class TacticalAttackTest {
     @Test void movingUsesSameTimeAndChecksReactionAtDestination() {
         WorldSceneState s=scene(0,2,0,WorldGeometry.empty()); s.enterTactical();
         assertEquals(TacticalMoveResult.SUCCESS,s.tryMoveHunterTo(target));
-        assertEquals(3,s.getHunterHealth()); assertEquals(1,s.getTacticalTimeUnits());
+        assertEquals(4,s.getHunterHealth()); assertEquals(1,s.getTacticalTimeUnits());
         assertEquals(TacticalMoveResult.SUCCESS,s.tryMoveHunterTo(new CellCoordinates(0,0)));
-        assertEquals(3,s.getHunterHealth()); assertEquals(2,s.getTacticalTimeUnits());
+        assertEquals(4,s.getHunterHealth()); assertEquals(2,s.getTacticalTimeUnits());
         assertEquals(TacticalMoveResult.SUCCESS,s.tryMoveHunterTo(target));
         assertEquals(TacticalMoveResult.OCCUPIED,s.tryMoveHunterTo(new CellCoordinates(2,0)));
     }
@@ -85,9 +85,10 @@ class TacticalAttackTest {
     }
     @Test void lethalReactionToMoveKeepsDestinationAndOccupancy() {
         WorldSceneState s=scene(3,2,0,WorldGeometry.empty()); s.enterTactical();
+        assertEquals(TacticalMoveResult.SUCCESS,s.tryMoveHunterTo(new CellCoordinates(1,1)));
         assertEquals(TacticalMoveResult.SUCCESS,s.tryMoveHunterTo(target));
         assertEquals(0,s.getHunterHealth()); assertEquals(target,s.getPlacement().getHunterCell());
-        assertEquals(new WorldPosition(1.5,.5),s.getHunterPosition()); assertEquals(1,s.getTacticalTimeUnits());
+        assertEquals(new WorldPosition(1.5,.5),s.getHunterPosition()); assertEquals(2,s.getTacticalTimeUnits());
     }
     @Test void oppositeIntegerLimitsCannotWrapIntoAdjacentCells() {
         WorldSceneState s = new WorldSceneState(new HunterState(new WorldPosition(Integer.MIN_VALUE+.5,.5),1,.1),
