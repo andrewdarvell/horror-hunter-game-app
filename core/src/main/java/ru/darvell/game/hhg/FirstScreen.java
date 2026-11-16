@@ -7,6 +7,11 @@ import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
+import com.badlogic.gdx.math.Matrix4;
+import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
@@ -45,6 +50,50 @@ public class FirstScreen implements Screen {
     private boolean pointerReady;
     private boolean active;
     private boolean primaryDown;
+    private CellCoordinates selectedTarget;
+    private double attackDisplay;
+    private boolean attackJustCreated;
+    private String message = "";
+    private SpriteBatch hudBatch;
+    private BitmapFont hudFont;
+
+    boolean isBusy() { return transition != null || attackDisplay > 0; }
+    boolean hasSelectedTarget() { return selectedTarget != null; }
+
+    private boolean insideViewport(int x, int y) {
+        int top = Gdx.graphics.getHeight() - viewport.getScreenY() - viewport.getScreenHeight();
+        return x >= viewport.getScreenX() && x < (long) viewport.getScreenX() + viewport.getScreenWidth()
+            && y >= top && y < (long) top + viewport.getScreenHeight();
+    }
+
+    private boolean inAttackButton(int x, int y) {
+        int left = viewport.getScreenX();
+        int top = Gdx.graphics.getHeight() - viewport.getScreenY() - viewport.getScreenHeight();
+        return selectedTarget != null && viewport.getScreenWidth() >= 48 && viewport.getScreenHeight() >= 48
+            && x >= left && x < left + Math.min(220, viewport.getScreenWidth()) && y >= top && y < top + 48;
+    }
+
+    private String reason(TacticalAttackResult.Outcome outcome) {
+        switch (outcome) {
+            case OUT_OF_RANGE: return "Цель далеко";
+            case BLOCKED: return "Препятствие";
+            case HUNTER_DEFEATED: return "Охотник повержен";
+            case TARGET_DEFEATED: return "Цель повержена";
+            default: return "Нет доступной цели";
+        }
+    }
+
+    private void showResolution(TacticalAttackResult result) {
+        StringBuilder text = new StringBuilder();
+        for (TacticalAttackResult.Effect effect : result.getEffects()) {
+            if (text.length() > 0) text.append(" → ");
+            text.append(effect == TacticalAttackResult.Effect.HIT ? "Удар −1" : "Укус −1");
+        }
+        if (result.getOutcome() == TacticalAttackResult.Outcome.INTERRUPTED) text.append(" · Удар прерван");
+        if (result.isCreatureDefeated()) text.append(" · Цель повержена");
+        if (result.isHunterDefeated()) text.append(" · Охотник повержен");
+        message = text.toString();
+    }
     private InputProcessor previousInput;
     private final InputAdapter pointerInput = new InputAdapter() {
         @Override
@@ -52,18 +101,41 @@ public class FirstScreen implements Screen {
             if (!active || pointer != 0 || button != Input.Buttons.LEFT) return false;
             if (primaryDown) return true;
             primaryDown = true;
-            if (scene.getMode() != SceneMode.TACTICAL || transition != null) return true;
+            if (scene.getMode() != SceneMode.TACTICAL || isBusy()) return true;
+            if (!pointerReady || !insideViewport(x, y)) return true;
+            if (scene.getHunterHealth() == 0) return true;
+            if (inAttackButton(x, y)) {
+                TacticalAttackResult result = scene.tryAttackCreature(selectedTarget);
+                if (result.isAccepted()) {
+                    selectedTarget = null;
+                    showResolution(result);
+                    attackDisplay = .24;
+                    attackJustCreated = true;
+                } else message = reason(result.getOutcome());
+                return true;
+            }
             CellCoordinates target = TacticalCellPicker.pick(viewport, tacticalGrid, x, y,
                 Gdx.graphics.getWidth(), Gdx.graphics.getHeight(), pointerReady);
             if (target == null) return true;
+            if (scene.getPlacement().creatureCell().filter(target::equals).isPresent()) {
+                selectedTarget = target.equals(selectedTarget) ? null : target;
+                return true;
+            }
+            selectedTarget = null;
             WorldPosition start = scene.getHunterPosition();
             if (scene.tryMoveHunterTo(target) == TacticalMoveResult.SUCCESS) {
+                showResolution(scene.getLastResolution());
                 transition = TacticalEntryTransition.forHunterMove(start, scene.getHunterPosition(),
                     scene.getCreaturePosition());
                 transitionJustCreated = true;
                 selectVisualPositions();
             }
             return true;
+        }
+
+        @Override
+        public boolean touchCancelled(int x, int y, int pointer, int button) {
+            return touchUp(x, y, pointer, button);
         }
 
         @Override
@@ -130,7 +202,9 @@ public class FirstScreen implements Screen {
         updateDebugControls();
         viewport.apply();
         followHunter();
+        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) && !isBusy()) selectedTarget = null;
         drawScene();
+        drawHud();
     }
 
     TacticalEntryResult.Outcome updateScene(double x, double y, double delta, boolean manualEntry) {
@@ -150,6 +224,10 @@ public class FirstScreen implements Screen {
             if (transitionJustCreated) transitionJustCreated = false;
             else transition.advance(safeDelta);
             if (transition.isComplete()) transition = null;
+        }
+        if (attackDisplay > 0) {
+            if (attackJustCreated) attackJustCreated = false;
+            else attackDisplay = Math.max(0, attackDisplay - safeDelta);
         }
         selectVisualPositions();
         return outcome;
@@ -218,7 +296,8 @@ public class FirstScreen implements Screen {
             (float) scene.getHunterRadius(),
             32
         );
-        shapeRenderer.setColor(scene.isCreatureAlerted() ? Color.RED : Color.CYAN);
+        shapeRenderer.setColor(scene.getCreatureHealth() == 0 ? Color.DARK_GRAY
+            : selectedTarget != null ? Color.MAGENTA : scene.isCreatureAlerted() ? Color.RED : Color.CYAN);
         WorldPosition creaturePosition = visualCreaturePosition;
         shapeRenderer.circle(
             (float) creaturePosition.getX(),
@@ -227,7 +306,7 @@ public class FirstScreen implements Screen {
             32
         );
         WorldPosition lastSeen = scene.getLastSeenHunterPosition();
-        if (lastSeen != null) {
+        if (lastSeen != null && scene.getCreatureHealth() > 0) {
             double dx = lastSeen.getX() - creaturePosition.getX();
             double dy = lastSeen.getY() - creaturePosition.getY();
             double length = Math.hypot(dx, dy);
@@ -242,9 +321,41 @@ public class FirstScreen implements Screen {
         if (scene.getPlacement() != null) {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
             drawOccupiedCell(scene.getPlacement().getHunterCell(), Color.GOLDENROD);
-            drawOccupiedCell(scene.getPlacement().getCreatureCell(), Color.CYAN);
+            scene.getPlacement().creatureCell().ifPresent(cell -> drawOccupiedCell(cell, Color.CYAN));
             shapeRenderer.end();
         }
+    }
+
+    private void drawHud() {
+        if (scene.getMode() != SceneMode.TACTICAL) return;
+        if (hudBatch == null) {
+            hudBatch = new SpriteBatch();
+            FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal("fonts/DejaVuSans.ttf"));
+            try {
+                FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
+                parameter.size = 16;
+                parameter.characters = FreeTypeFontGenerator.DEFAULT_CHARS
+                    + "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя→−·";
+                hudFont = generator.generateFont(parameter);
+            } finally { generator.dispose(); }
+        }
+        int width = Gdx.graphics.getWidth(), height = Gdx.graphics.getHeight();
+        hudBatch.setProjectionMatrix(new Matrix4().setToOrtho2D(0, 0, width, height));
+        float left = viewport.getScreenX() + 4;
+        float top = viewport.getScreenY() + viewport.getScreenHeight() - 4;
+        hudBatch.begin();
+        if (selectedTarget != null) {
+            TacticalAttackResult.Outcome available = scene.attackAvailability(selectedTarget);
+            hudFont.setColor(available == TacticalAttackResult.Outcome.HIT ? Color.YELLOW : Color.LIGHT_GRAY);
+            hudFont.draw(hudBatch, "[ Атаковать · 2 ед. ]", left, top);
+            hudFont.draw(hudBatch, available == TacticalAttackResult.Outcome.HIT
+                ? "Укус каждый 1 ед.; возможно прерывание" : reason(available), left, top - 24);
+        }
+        hudFont.setColor(Color.WHITE);
+        hudFont.draw(hudBatch, "HP: " + scene.getHunterHealth() + "/4 · Цель: " + scene.getCreatureHealth()
+            + "/2 · Время: " + scene.getTacticalTimeUnits(), left, top - 64);
+        hudFont.draw(hudBatch, message, left, top - 88);
+        hudBatch.end();
     }
 
     private void drawOccupiedCell(CellCoordinates cell, Color color) {
@@ -318,7 +429,8 @@ public class FirstScreen implements Screen {
 
     @Override
     public void pause() {
-        // Invoked when your application is paused.
+        selectedTarget = null;
+        primaryDown = false;
     }
 
     @Override
@@ -331,6 +443,7 @@ public class FirstScreen implements Screen {
         if (active && Gdx.input.getInputProcessor() == pointerInput) {
             Gdx.input.setInputProcessor(previousInput);
         }
+        selectedTarget = null;
         active = false;
         primaryDown = false;
         previousInput = null;
@@ -340,5 +453,7 @@ public class FirstScreen implements Screen {
     public void dispose() {
         hide();
         if (shapeRenderer != null) shapeRenderer.dispose();
+        if (hudFont != null) hudFont.dispose();
+        if (hudBatch != null) hudBatch.dispose();
     }
 }

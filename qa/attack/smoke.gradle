@@ -1,0 +1,19 @@
+// Запуск из корня: ./gradlew -I qa/attack/smoke.gradle :lwjgl3:attackSmoke
+// Требует desktop OpenGL/display. Не входит в обычную сборку.
+gradle.projectsEvaluated {
+  def desktop = gradle.rootProject.project(':lwjgl3')
+  desktop.tasks.register('compileAttackSmoke', JavaCompile) {
+    dependsOn desktop.tasks.named('classes')
+    source = desktop.rootProject.fileTree('qa/attack') { include '*.java' }
+    classpath = desktop.sourceSets.main.runtimeClasspath
+    destinationDirectory = desktop.layout.buildDirectory.dir('attack-smoke')
+    options.release = 8
+  }
+  desktop.tasks.register('attackSmoke', JavaExec) {
+    dependsOn desktop.tasks.named('compileAttackSmoke')
+    classpath = desktop.sourceSets.main.runtimeClasspath + desktop.files(desktop.layout.buildDirectory.dir('attack-smoke'))
+    mainClass = 'ru.darvell.game.hhg.AttackSmoke'
+    workingDir = desktop.rootProject.file('assets')
+    jvmArgs '--enable-native-access=ALL-UNNAMED', '--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED'
+  }
+}

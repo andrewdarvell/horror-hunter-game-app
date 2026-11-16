@@ -17,6 +17,7 @@ public final class CreaturePatrolState {
     private final double detectionRadius;
     private boolean alerted;
     private WorldPosition lastSeenHunterPosition;
+    private int health = 2;
     private WorldPosition position;
     private int targetIndex = 1;
     private int direction = 1;
@@ -55,6 +56,16 @@ public final class CreaturePatrolState {
         this.pauseSeconds = pauseSeconds;
         position = copy.get(0);
         waitRemaining = pauseSeconds;
+    }
+
+    public int getHealth() { return health; }
+    public boolean isDefeated() { return health == 0; }
+
+    public CreaturePatrolState withDamage(int damage) {
+        if (damage < 0) throw new IllegalArgumentException("Negative damage");
+        CreaturePatrolState result = copy();
+        result.health = Math.max(0, health - damage);
+        return result;
     }
 
     public WorldPosition getPosition() {
@@ -99,6 +110,7 @@ public final class CreaturePatrolState {
     }
 
     private CreaturePatrolState(CreaturePatrolState source) {
+        health = source.health;
         route = source.route;
         geometry = source.geometry;
         movementSpeed = source.movementSpeed;
