@@ -1,5 +1,7 @@
 # combat-rhythm: verification реализации
 
+Implementation PR: [#24](https://github.com/andrewdarvell/horror-hunter-game-app/pull/24) (draft).
+
 Статус: implementation подготовлена для review; ручная приёмка не завершена. G1–G6 утверждены. Main specs не синхронизированы, change не архивирован. Отдельная ветка `feat/combat-rhythm-implementation` основана на planning PR #23; пока #23 открыт, implementation PR направлен в `docs/combat-rhythm-planning`.
 
 ## Изменения и архитектура
