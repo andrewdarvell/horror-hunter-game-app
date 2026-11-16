@@ -1,6 +1,6 @@
 # Проверка реализации first-tactical-attack
 
-Реализован утверждённый профиль R1–R6. Числа остаются временным балансом прототипа. Main specs не синхронизированы, change не архивирован. Приёмка реализации владельцем ещё не получена.
+Реализован утверждённый профиль R1–R6. Числа остаются временным балансом прототипа. Владелец разрешил завершение change запросом на sync/archive после отчёта о реализации PR #21. Main specs синхронизированы; change архивирован с сохранением невыполненных проверок 5.2 и 5.3.
 
 ## Реализация
 
@@ -27,9 +27,9 @@ Desktop OpenGL smoke: `./gradlew -I qa/attack/smoke.gradle :lwjgl3:attackSmoke -
 
 Android: `android/build/outputs/apk/debug/android-debug.apk` собран. Lint: 0 errors, 8 warnings в manifest/icons (RedundantLabel, VectorRaster, DiscouragedApi и др.); отчёты в `android/build/reports/`. Эти файлы сборки не входят в Git.
 
-## Ограничения и оставшаяся приёмка
+## Ограничения, сохранённые при архивировании
 
 - `adb devices -l` — список пуст. Проверка на Android device/emulator (физический touch, multitouch, pause/resume и восприятие размеров кнопки) не выполнена; общий libGDX pointer-контракт покрыт core-тестами. Задача 5.3 остаётся открыта.
 - Ручной desktop playtest полного сценария auto-entry/боя и оценки удобства не выполнен. Автоматический OpenGL smoke и regression tests его не заменяют; задача 5.2 остаётся открыта.
-- Требуется приёмка владельца (5.5). Часы пока только tactical, нет exploration/offscreen симуляции, преследования, выхода из tactical или рестарта. Это границы утверждённого среза.
-- `openspec validate first-tactical-attack --strict --no-interactive` и `git diff --check` выполняются перед коммитом; Gradle сообщает предупреждения о Java 8 source/target и deprecated API smoke harness.
+- Приёмка для завершения change (5.5) зафиксирована по явному запросу владельца на sync/archive. Это не свидетельство выполнения ручных проверок. Часы пока только tactical, нет exploration/offscreen симуляции, преследования, выхода из tactical или рестарта. Это границы утверждённого среза.
+- `openspec validate first-tactical-attack --strict --no-interactive` и `git diff --check` прошли при завершении change; Gradle сообщает предупреждения о Java 8 source/target и deprecated API smoke harness.
