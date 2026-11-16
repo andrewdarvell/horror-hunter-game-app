@@ -5,7 +5,10 @@ import ru.darvell.game.hhg.domain.actor.HunterState;
 import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.Outcome;
-import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.Effect;
+import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.Event;
+import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.EventType;
+import ru.darvell.game.hhg.domain.tactical.PrototypeBiteState;
+import ru.darvell.game.hhg.domain.tactical.PrototypeBiteState.Phase;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -28,6 +31,9 @@ public final class WorldSceneState {
     private TacticalPlacement placement;
     private long tacticalTimeUnits;
     private TacticalAttackResult lastResolution;
+    private PrototypeBiteState biteState;
+
+    public PrototypeBiteState getBiteState() { return biteState; }
 
     public WorldSceneState(HunterState hunter, CreaturePatrolState creature,
                            TacticalGrid grid, WorldGeometry geometry) {
@@ -64,10 +70,15 @@ public final class WorldSceneState {
             HunterState preparedHunter = hunter.withTacticalPosition(result.getHunterCenter());
             CreaturePatrolState preparedCreature = creature.withTacticalPosition(result.getCreatureCenter());
             TacticalPlacement preparedPlacement = result.getPlacement();
+            PrototypeBiteState preparedBite = preparedCreature.isDefeated() ? null
+                : new PrototypeBiteState(canBite(preparedHunter, preparedCreature, preparedPlacement)
+                    ? Phase.PREPARING : Phase.READY,
+                    canBite(preparedHunter, preparedCreature, preparedPlacement) ? 1 : 0);
             // Публикация только после полной подготовки: без вызовов, проверок и callbacks.
             hunter = preparedHunter;
             creature = preparedCreature;
             placement = preparedPlacement;
+            biteState = preparedBite;
             mode = SceneMode.TACTICAL;
         }
         return result.getOutcome();
@@ -97,7 +108,7 @@ public final class WorldSceneState {
         }
         TacticalPlacement preparedPlacement = creature.isDefeated()
             ? TacticalPlacement.hunterOnly(target) : new TacticalPlacement(target, placement.getCreatureCell());
-        resolve(false, hunter.withTacticalPosition(center), preparedPlacement);
+        resolve(false, hunter.withTacticalPosition(center), preparedPlacement, true);
         return TacticalMoveResult.SUCCESS;
     }
 
@@ -118,10 +129,25 @@ public final class WorldSceneState {
     }
 
     public TacticalAttackResult tryAttackCreature(CellCoordinates target) {
+        return attack(target, true);
+    }
+
+    /** Использует ровно тот же расчёт, но ничего не публикует. */
+    public TacticalAttackResult previewAttackCreature(CellCoordinates target) {
+        return attack(target, false);
+    }
+
+    private TacticalAttackResult attack(CellCoordinates target, boolean publish) {
         Outcome check = attackAvailability(target);
         if (check != Outcome.HIT) return new TacticalAttackResult(check, hunter.getHealth(), hunter.getHealth(),
-            creature.getHealth(), creature.getHealth(), 0, Collections.emptyList());
-        return resolve(true, hunter.copy(), placement);
+            creature.getHealth(), creature.getHealth(), 0, biteState, biteState, Collections.emptyList());
+        return resolve(true, hunter.copy(), placement, publish);
+    }
+
+    private boolean canBite(HunterState h, CreaturePatrolState c, TacticalPlacement p) {
+        return !h.isDefeated() && !c.isDefeated()
+            && adjacent(p.getHunterCell(), p.getCreatureCell())
+            && geometry.hasLineOfSight(h.getPosition(), c.getPosition());
     }
 
     private static boolean adjacent(CellCoordinates a, CellCoordinates b) {
@@ -129,10 +155,12 @@ public final class WorldSceneState {
         return Math.max(Math.abs(dx), Math.abs(dy)) == 1;
     }
 
-    /** Узкий профиль текущего прототипного существа: один укус за единицу, без AI scheduler. */
-    private TacticalAttackResult resolve(boolean attack, HunterState preparedHunter, TacticalPlacement preparedPlacement) {
+    /** Узкий цикл прототипа; все вычисления до публикации, без AI scheduler. */
+    private TacticalAttackResult resolve(boolean attack, HunterState preparedHunter,
+                                        TacticalPlacement preparedPlacement, boolean publish) {
         CreaturePatrolState preparedCreature = creature.copy();
-        List<Effect> effects = new ArrayList<>();
+        PrototypeBiteState preparedBite = biteState;
+        List<Event> events = new ArrayList<>();
         int duration = attack ? 2 : 1;
         int elapsed = 0;
         boolean hit = false;
@@ -141,26 +169,44 @@ public final class WorldSceneState {
             if (attack && unit == duration) {
                 preparedCreature = preparedCreature.withDamage(1);
                 hit = true;
-                effects.add(Effect.HIT);
+                events.add(new Event(EventType.HIT, unit));
             }
-            if (!preparedCreature.isDefeated()
-                && adjacent(preparedPlacement.getHunterCell(), preparedPlacement.getCreatureCell())
-                && geometry.hasLineOfSight(preparedHunter.getPosition(), preparedCreature.getPosition())) {
-                preparedHunter = preparedHunter.withDamage(1);
-                effects.add(Effect.BITE);
+            if (preparedCreature.isDefeated()) {
+                preparedBite = null;
+            } else {
+                if (preparedBite.getPhase() == Phase.PREPARING) {
+                    boolean bites = canBite(preparedHunter, preparedCreature, preparedPlacement);
+                    if (bites) preparedHunter = preparedHunter.withDamage(1);
+                    events.add(new Event(bites ? EventType.BITE : EventType.BITE_MISS, unit));
+                    preparedBite = new PrototypeBiteState(Phase.RECOVERING, 3);
+                    events.add(new Event(EventType.RECOVERY_STARTED, unit));
+                } else if (preparedBite.getPhase() == Phase.RECOVERING) {
+                    int remaining = preparedBite.getRemainingUnits() - 1;
+                    preparedBite = new PrototypeBiteState(remaining == 0 ? Phase.READY : Phase.RECOVERING, remaining);
+                    if (remaining == 0) events.add(new Event(EventType.RECOVERY_ENDED, unit));
+                }
+                if (preparedHunter.isDefeated()) break;
+                if (preparedBite.getPhase() == Phase.READY
+                    && canBite(preparedHunter, preparedCreature, preparedPlacement)) {
+                    preparedBite = new PrototypeBiteState(Phase.PREPARING, 1);
+                    events.add(new Event(EventType.PREPARATION_STARTED, unit));
+                }
             }
-            if (preparedHunter.isDefeated()) break;
         }
         if (preparedCreature.isDefeated()) preparedPlacement = TacticalPlacement.hunterOnly(preparedPlacement.getHunterCell());
         long preparedTime = Math.addExact(tacticalTimeUnits, elapsed);
         TacticalAttackResult result = new TacticalAttackResult(attack ? (hit ? Outcome.HIT : Outcome.INTERRUPTED) : Outcome.MOVE,
-            hunter.getHealth(), preparedHunter.getHealth(), creature.getHealth(), preparedCreature.getHealth(), elapsed, effects);
-        // Все вычисления и выделения завершены; публикация в однопоточной сцене без callbacks.
-        hunter = preparedHunter;
-        creature = preparedCreature;
-        placement = preparedPlacement;
-        tacticalTimeUnits = preparedTime;
-        lastResolution = result;
+            hunter.getHealth(), preparedHunter.getHealth(), creature.getHealth(), preparedCreature.getHealth(),
+            elapsed, biteState, preparedBite, events);
+        if (publish) {
+            // Здесь нет allocation, проверок или callbacks: публикация в однопоточной сцене.
+            hunter = preparedHunter;
+            creature = preparedCreature;
+            placement = preparedPlacement;
+            biteState = preparedBite;
+            tacticalTimeUnits = preparedTime;
+            lastResolution = result;
+        }
         return result;
     }
 
