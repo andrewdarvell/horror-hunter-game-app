@@ -23,7 +23,8 @@ class TacticalMovementTest {
     private static CellCoordinates c(int x, int y) { return new CellCoordinates(x, y); }
     private static Object[] snapshot(WorldSceneState s) {
         return new Object[] {s.getMode(), s.getPlacement(), s.getHunterPosition(), s.getCreaturePosition(),
-            s.isCreatureAlerted(), s.getLastSeenHunterPosition()};
+            s.isCreatureAlerted(), s.getLastSeenHunterPosition(), s.getBiteState(), s.getLastResolution(),
+            s.getHunterHealth(), s.getCreatureHealth(), s.getTacticalTimeUnits()};
     }
     private void rejected(WorldSceneState s, CellCoordinates target, TacticalMoveResult result) {
         Object[] before = snapshot(s);

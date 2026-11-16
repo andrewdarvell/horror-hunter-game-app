@@ -214,3 +214,17 @@ tasks.withType(JavaExec.class).configureEach {
 if(enableGraalNative == 'true') {
   apply from: file("nativeimage.gradle")
 }
+// Детерминированный fixture использует настоящий FirstScreen и OpenGL desktop backend.
+tasks.register('compileCombatRhythmSmoke', JavaCompile) {
+  dependsOn classes
+  source = fileTree('src/smoke/java')
+  classpath = sourceSets.main.runtimeClasspath
+  destinationDirectory = layout.buildDirectory.dir('classes/smoke')
+  options.release = 8
+}
+tasks.register('combatRhythmSmoke', JavaExec) {
+  dependsOn compileCombatRhythmSmoke
+  classpath = sourceSets.main.runtimeClasspath + files(layout.buildDirectory.dir('classes/smoke'))
+  mainClass = 'ru.darvell.game.hhg.CombatRhythmSmoke'
+  workingDir = rootProject.file('assets')
+}

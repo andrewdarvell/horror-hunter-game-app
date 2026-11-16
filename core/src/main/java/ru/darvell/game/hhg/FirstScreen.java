@@ -85,9 +85,9 @@ public class FirstScreen implements Screen {
 
     private void showResolution(TacticalAttackResult result) {
         StringBuilder text = new StringBuilder();
-        for (TacticalAttackResult.Effect effect : result.getEffects()) {
+        for (TacticalAttackResult.Event event : result.getEvents()) {
             if (text.length() > 0) text.append(" → ");
-            text.append(effect == TacticalAttackResult.Effect.HIT ? "Удар −1" : "Укус −1");
+            text.append(CombatHud.event(event.getType()));
         }
         if (result.getOutcome() == TacticalAttackResult.Outcome.INTERRUPTED) text.append(" · Удар прерван");
         if (result.isCreatureDefeated()) text.append(" · Цель повержена");
@@ -340,22 +340,33 @@ public class FirstScreen implements Screen {
             } finally { generator.dispose(); }
         }
         int width = Gdx.graphics.getWidth(), height = Gdx.graphics.getHeight();
+        com.badlogic.gdx.graphics.glutils.HdpiUtils.glViewport(0, 0, width, height);
         hudBatch.setProjectionMatrix(new Matrix4().setToOrtho2D(0, 0, width, height));
         float left = viewport.getScreenX() + 4;
         float top = viewport.getScreenY() + viewport.getScreenHeight() - 4;
         hudBatch.begin();
+        float textWidth = Math.max(1, viewport.getScreenWidth() - 8);
         if (selectedTarget != null) {
             TacticalAttackResult.Outcome available = scene.attackAvailability(selectedTarget);
             hudFont.setColor(available == TacticalAttackResult.Outcome.HIT ? Color.YELLOW : Color.LIGHT_GRAY);
-            hudFont.draw(hudBatch, "[ Атаковать · 2 ед. ]", left, top);
-            hudFont.draw(hudBatch, available == TacticalAttackResult.Outcome.HIT
-                ? "Укус каждый 1 ед.; возможно прерывание" : reason(available), left, top - 24);
+            hudFont.draw(hudBatch, "[ Атаковать · 2 ед. ]", left, top, textWidth, 8, true);
+            top -= 54; // Вся touch-область кнопки остаётся свободной от прочего текста.
+            top = drawHudLine(available == TacticalAttackResult.Outcome.HIT
+                ? CombatHud.risk(scene.previewAttackCreature(selectedTarget)) : reason(available), left, top, textWidth);
         }
+        hudFont.setColor(scene.getBiteState() != null
+            && scene.getBiteState().getPhase() == ru.darvell.game.hhg.domain.tactical.PrototypeBiteState.Phase.PREPARING
+            ? Color.ORANGE : Color.CYAN);
+        top = drawHudLine(CombatHud.phase(scene), left, top, textWidth);
         hudFont.setColor(Color.WHITE);
-        hudFont.draw(hudBatch, "HP: " + scene.getHunterHealth() + "/4 · Цель: " + scene.getCreatureHealth()
-            + "/2 · Время: " + scene.getTacticalTimeUnits(), left, top - 64);
-        hudFont.draw(hudBatch, message, left, top - 88);
+        top = drawHudLine("HP: " + scene.getHunterHealth() + "/4 · Цель: " + scene.getCreatureHealth()
+            + "/2 · Время: " + scene.getTacticalTimeUnits(), left, top, textWidth);
+        drawHudLine(message, left, top, textWidth);
         hudBatch.end();
+    }
+
+    private float drawHudLine(String text, float left, float top, float width) {
+        return top - hudFont.draw(hudBatch, text, left, top, width, 8, true).height - 12;
     }
 
     private void drawOccupiedCell(CellCoordinates cell, Color color) {
