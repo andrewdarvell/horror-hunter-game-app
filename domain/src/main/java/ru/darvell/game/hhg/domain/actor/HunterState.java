@@ -5,6 +5,7 @@ import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 /** Минимальное состояние охотника и правило свободного перемещения. */
 public final class HunterState {
+    private int health = 4;
     private WorldPosition position;
     private final double movementSpeed;
     private final double radius;
@@ -22,6 +23,16 @@ public final class HunterState {
         this.position = position;
         this.movementSpeed = movementSpeed;
         this.radius = radius;
+    }
+
+    public int getHealth() { return health; }
+    public boolean isDefeated() { return health == 0; }
+
+    public HunterState withDamage(int damage) {
+        if (damage < 0) throw new IllegalArgumentException("Negative damage");
+        HunterState result = copy();
+        result.health = Math.max(0, health - damage);
+        return result;
     }
 
     public WorldPosition getPosition() {
@@ -52,6 +63,7 @@ public final class HunterState {
     }
 
     private HunterState(HunterState source) {
+        health = source.health;
         position = source.position;
         movementSpeed = source.movementSpeed;
         radius = source.radius;
