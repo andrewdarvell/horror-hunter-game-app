@@ -1,3 +1,5 @@
+<!-- Владелец утвердил P1–P6 в последней редакции planning PR №32. Источник: ../../design.md. -->
+
 ## MODIFIED Requirements
 
 ### Requirement: Круглая форма охотника
