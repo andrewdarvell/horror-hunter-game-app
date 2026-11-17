@@ -84,6 +84,21 @@ P6. **UI, тесты и acceptance**: простая читаемая визуа
 
 Несколько существ и выбор цели между ними, настоящее A*/navmesh/pathfinding, стаи и координация, дальнобойные и длиннорукие атаки, новый тактический AI/scheduler, специальные реакции разных монстров (stagger, рывок, страх, суеверия), нюх/слух/шум/следы как игровые сенсоры, расход выносливости, RNG, global world clock, полноценный offscreen simulation, лут, ловушки и инвентарь.
 
+## Capabilities
+
+### New Capabilities
+
+- `creature-pursuit` описывает четыре состояния exploration, движение по памяти, возвращение к маршруту и индикацию.
+
+### Modified Capabilities
+
+- `creature-patrol` сохраняет прогресс при прерывании и возобновляет маршрут после физического возврата.
+- `creature-detection` учитывает действительный контакт на пути обоих участников.
+- `world-obstacles` задаёт физические ограничения для обоих участников в exploration.
+- `world-navigation` уточняет обработку времени свободного движения и соответствующего ввода.
+- `tactical-mode-entry` фиксирует позиции на границе контакта и замораживает exploration AI.
+- `tactical-mode-exit` и `tactical-breakout` возобновляют exploration с сохранённой памятью и возможностью нового контакта.
+
 ## Workflow
 
-Этот PR — только OpenSpec proposal. После review/merge — `$openspec-update-change` с design/delta-specs/tasks и явными решениями P1–P6; отдельно согласовать planning, затем `$openspec-apply-change` в implementation PR. Не менять core/domain код, main specs и не архивировать change до приёмки.
+Исходный proposal принят в PR №31. Рекомендованные решения P1–P6 описаны в [design.md](design.md) для отдельного planning review. После их утверждения реализация выполняется отдельным PR через `$openspec-apply-change` по запросу владельца. Синхронизация main specs и архивирование следуют после приёмки реализации.
