@@ -1,10 +1,10 @@
 # safe-tactical-exit: будущая реализация
 
-**Статус: planning для review; реализация не разрешена и не начата.** Все пункты ниже открыты намеренно. Рекомендованный вариант E1–E6 определён в design.md и delta-specs; перед кодом требуется решение владельца, а не только успешный OpenSpec status.
+**Статус: planning для review; реализация не разрешена и не начата.** E1–E6 утверждены владельцем, E2 уточнено границами контакта. Отмечен только факт согласования; все задачи реализации открыты. Перед кодом нужны финальное review и отдельное разрешение.
 
 ## 1. Согласование и актуализация базы
 
-- [ ] 1.1 Получить и записать утверждение владельцем E1–E6: геометрия угрозы, одна повторная auto-entry попытка, hunter-only, часы/история/фаза, T/touch, continuation патруля и безопасная остановка. При выборе альтернатив обновить все affected planning artifacts до реализации.
+- [x] 1.1 Зафиксировано утверждение владельцем E1, E3–E6 в рекомендованном варианте и E2 с попыткой на каждом новом контакте, без покадрового retry при непрерывном контакте после отказа. Design, deltas и proposal согласованы с решением; реализация не разрешена.
 - [ ] 1.2 Получить отдельное разрешение на `$openspec-apply-change`, проверить актуальный main и изменения combat-rhythm; создать отдельную implementation ветку/PR, не закрывая чужие незавершённые review/manual задачи.
 
 ## 2. Чистые predicates и продолжение actor
@@ -16,9 +16,11 @@
 ## 3. Доменный выход и повторный контакт
 
 - [ ] 3.1 Добавить TacticalExitResult, чистую availability и tryExitTactical с общим расчётом E1 и приоритетом mode → hunter defeated → active threat → success. Сохранять Java 8, долгие разности координат, прежние grid/radius/LOS; не вызывать resolver или mutating detection.
-- [ ] 3.2 Реализовать атомарный exit: EXPLORATION, placement absent, разрешение одной будущей auto-entry попытки. Snapshot tests для каждого отказа и повторов availability: HP/позиции, bite phase/остаток, патруль, perception, часы, lastResolution и guard неизменны; успех меняет только оговорённые поля.
-- [ ] 3.3 Добавить scene guard E2: successful exit переоткрывает одну automatic attempt на следующий действительный контакт, включая alerted. Manual/automatic объединяются; отказ потребляет automatic attempt без retry по кадрам, успешный manual entry закрывает guard. Проверить начальное первое обнаружение, отказ, повторный T и повторный контакт после нескольких safe exits.
+- [ ] 3.2 Реализовать атомарный exit: EXPLORATION, placement absent, contactOnPreviousCheck=false по доказанному отсутствию контакта. Snapshot tests для каждого отказа и повторов availability: HP/позиции, bite phase/остаток, патруль, perception, часы, lastResolution и guard неизменны; успех меняет только оговорённые поля.
+- [ ] 3.3 Добавить scene-owned contactOnPreviousCheck=false и edge detector E2: каждая exploration-проверка записывает contactNow после валидации, false→true вызывает одну auto-entry попытку независимо от alerted, manual объединяется. После отказа true→true не повторяет попытку; false→true после разрыва разрешает новую без safe exit. Проверить первый контакт, несколько отказов/разрывов, отсутствие мутации от availability/отказа exit/presentation, отсутствие контакта с мёртвым и сохранение actor firstDetection API.
 - [ ] 3.4 Покрыть матрицу E1: живой/мёртвый охотник и существо, alerted/unalerted, READY/PREPARING/RECOVERING, соседство с LOS/за стеной, по оси 2/3/4 клетки при radius=3, (3,3), сосед вне малого radius и иная cellSize. После разрешённого выхода zero-motion/zero-delta update сохраняет exploration; новая угроза корректно вызывает entry.
+
+- [ ] 3.5 Покрыть трассу после safe exit: false → true (отказ) → true/true (нет попыток даже при новых свободных клетках) → false → true (новая попытка). Повторить разрыв по radius и по LOS при alerted, объединение manual/auto, несколько циклов, первый контакт с delta=0 и невалидный update без мутации памяти. Разрыв только между проверками не считать обнаруженной границей.
 
 ## 4. Повторный вход без живой цели и история
 
