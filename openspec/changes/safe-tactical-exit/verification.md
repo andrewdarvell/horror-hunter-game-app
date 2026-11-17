@@ -43,4 +43,4 @@ Hunter-only planner использует существующие безопас
 | 7. Регрессии | Domain/core tests, W/D/C smoke и Android build; ручные проверки перечислены отдельно |
 | 8. Без прорыва | Изменения ограничены lifecycle режима; нет нового resolver/AI/world clock |
 
-Следующий шаг — review implementation PR и оставшиеся ручные проверки. Sync/архивирование допустимы только после приёмки владельцем.
+Implementation PR: https://github.com/andrewdarvell/horror-hunter-game-app/pull/27. Выполнено 22/25 задач; открыты ручные пункты 6.2–6.4. Следующий шаг — review implementation PR и оставшиеся ручные проверки. Sync/архивирование допустимы только после приёмки владельцем.

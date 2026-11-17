@@ -5,7 +5,7 @@
 ## 1. Согласование и актуализация базы
 
 - [x] 1.1 Зафиксировано утверждение владельцем E1, E3–E6 в рекомендованном варианте и E2 с попыткой на каждом новом контакте, без покадрового retry при непрерывном контакте после отказа. Design, deltas и proposal согласованы с решением; реализация разрешена отдельным текущим запросом владельца.
-- [ ] 1.2 Получить отдельное разрешение на `$openspec-apply-change`, проверить актуальный main и изменения combat-rhythm; создать отдельную implementation ветку/PR, не закрывая чужие незавершённые review/manual задачи.
+- [x] 1.2 Получить отдельное разрешение на `$openspec-apply-change`, проверить актуальный main и изменения combat-rhythm; создать отдельную implementation ветку/PR, не закрывая чужие незавершённые review/manual задачи.
 
 ## 2. Чистые predicates и продолжение actor
 
@@ -44,4 +44,4 @@
 - [ ] 6.3 Вручную проверить disabled reason, T/touch controls без selection, attack/control/map separation, удержание, presentation 220/180/240, resize и camera при G=false/true. Добавить screenshots/запись; обозначить touch-эмуляцию отдельно от реального устройства.
 - [ ] 6.4 При доступном SDK 36 выполнить `./gradlew :android:assembleDebug` и touch-проверку на Android устройстве/эмуляторе; при недоступности явно зафиксировать ограничение. Сборка APK не подтверждает UI/touch вручную.
 - [x] 6.5 Выполнить `OPENSPEC_TELEMETRY=0 openspec validate safe-tactical-exit --strict --no-interactive` и `git diff --check`; подготовить verification.md с фактическими результатами, ограничениями и соответствием Acceptance Criteria. Не менять main specs до приёмки и не закрывать открытые manual пункты combat-rhythm этим отчётом.
-- [ ] 6.6 Передать implementation PR владельцу на приёмку с E1–E6 и verification; только после приёмки отдельно синхронизировать specs и архивировать change. Planning PR не является разрешением этих действий.
+- [x] 6.6 Передать implementation PR владельцу на приёмку с E1–E6 и verification; только после приёмки отдельно синхронизировать specs и архивировать change. Planning PR не является разрешением этих действий.
