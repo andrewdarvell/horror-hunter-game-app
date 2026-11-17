@@ -34,6 +34,7 @@ import ru.darvell.game.hhg.domain.tactical.TacticalMoveResult;
 
 /** First screen of the application. Displayed after the application is created. */
 public class FirstScreen implements Screen {
+    private static final int MODE_BUTTON_WIDTH = 220;
     private static final float VIRTUAL_WIDTH = 20.0f;
     private static final float VIRTUAL_HEIGHT = 15.0f;
     private static final double PROTOTYPE_MOVEMENT_SPEED = 5.0;
@@ -108,7 +109,9 @@ public class FirstScreen implements Screen {
             if (isBusy() || pointerModeChanged) return true;
             if (!pointerReady || !insideViewport(x, y)) return true;
             Rectangle modeBounds = modeButtonBounds();
-            if (modeBounds != null && modeBounds.contains(x, Gdx.graphics.getHeight() - 1 - y)) {
+            int screenY = Gdx.graphics.getHeight() - 1 - y;
+            if (modeBounds != null && x >= modeBounds.x && x < modeBounds.x + modeBounds.width
+                && screenY >= modeBounds.y && screenY < modeBounds.y + modeBounds.height) {
                 SceneMode before = scene.getMode();
                 updateScene(0, 0, 0, true);
                 pointerModeChanged = before != scene.getMode();
@@ -356,7 +359,7 @@ public class FirstScreen implements Screen {
     Rectangle modeButtonBounds() {
         int width = viewport.getScreenWidth(), height = viewport.getScreenHeight();
         if (!pointerReady || width < 48 || height < (selectedTarget == null ? 48 : 108)) return null;
-        return new Rectangle(viewport.getScreenX(), viewport.getScreenY(), width, 48);
+        return new Rectangle(viewport.getScreenX(), viewport.getScreenY(), Math.min(width, MODE_BUTTON_WIDTH), 48);
     }
 
     private String exitReason(TacticalExitResult result) {

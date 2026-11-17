@@ -41,4 +41,43 @@ class TacticalExitPointerTest extends TacticalPointerTest {
         screen.hide();
     }
 
+    @Test void lowerStripOutsideButtonRoutesToMapAfterViewportResize() {
+        WorldSceneState scene=scene();
+        FirstScreen screen=screen(scene);
+        screen.show();ready(screen);
+        // The base Graphics fixture reports a 2x HiDPI back buffer.
+        for (int[] size : new int[][]{{640,480},{480,800},{1001,601},{1200,400},{400,1200}}) {
+            bounds(size[0],size[1]);
+            com.badlogic.gdx.math.Rectangle b=screen.modeButtonBounds();
+            assertEquals(viewport.getScreenX(),b.x);
+            assertEquals(viewport.getScreenY(),b.y);
+            assertTrue(b.width>=48 && b.width<viewport.getScreenWidth());
+            assertEquals(48,b.height);
+            int y=height-1-(int)b.y-10;
+            // The first pixel at the right edge is outside (half-open bounds).
+            int x=(int)(b.x+b.width);
+            handler.touchDown(x,y,0,Input.Buttons.LEFT);up();
+            assertEquals(SceneMode.EXPLORATION,scene.getMode());
+            scene.enterTactical();
+            down(5,0);up();assertTrue(screen.hasSelectedTarget());
+            handler.touchDown(x,y,0,Input.Buttons.LEFT);up();
+            assertEquals(SceneMode.TACTICAL,scene.getMode());
+            assertFalse(screen.hasSelectedTarget(),"Outside-button click must reach map handling");
+            assertEquals(0,scene.getTacticalTimeUnits());
+            assertEquals(ru.darvell.game.hhg.domain.tactical.TacticalExitResult.SUCCESS,scene.tryExitTactical());
+            // Letterbox fields must also never activate the control.
+            if (viewport.getScreenX()>0) {
+                handler.touchDown(viewport.getScreenX()-1,y,0,Input.Buttons.LEFT);up();
+                assertEquals(SceneMode.EXPLORATION,scene.getMode());
+            }
+            if (viewport.getScreenY()>0) {
+                handler.touchDown((int)b.x+10,height-viewport.getScreenY(),0,Input.Buttons.LEFT);up();
+                assertEquals(SceneMode.EXPLORATION,scene.getMode());
+            }
+        }
+        bounds(100,75);assertEquals(100,screen.modeButtonBounds().width);
+        bounds(47,47);assertNull(screen.modeButtonBounds());
+        screen.hide();
+    }
+
 }

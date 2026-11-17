@@ -44,3 +44,12 @@ Hunter-only planner использует существующие безопас
 | 8. Без прорыва | Изменения ограничены lifecycle режима; нет нового resolver/AI/world clock |
 
 Implementation PR: https://github.com/andrewdarvell/horror-hunter-game-app/pull/27. Выполнено 22/25 задач; открыты ручные пункты 6.2–6.4. Следующий шаг — review implementation PR и оставшиеся ручные проверки. Sync/архивирование допустимы только после приёмки владельцем.
+
+
+## Исправление hitbox переключателя в PR #27
+
+Кликабельная область ограничена кнопкой слева: 220×48 logical screen units с уменьшением ширины до доступной ширины viewport. При ширине или высоте менее 48 control скрывается по прежнему правилу. `modeButtonBounds()` используется и отрисовкой (включая padding/обрезку текста), и hit testing; вся нижняя полоса больше не считается кнопкой. Правая и верхняя границы hitbox исключаются по half-open правилу. Domain, busy gate, pointer latch и защита от второго переключения не менялись.
+
+`./gradlew :core:test` — exit 0, **36 tests, 0 failures/errors/skipped**. Новый `lowerStripOutsideButtonRoutesToMapAfterViewportResize` проверяет 640×480, 480×800, 1001×601, 1200×400 и 400×1200 с обновлением viewport bounds; Graphics fixture эмулирует HiDPI back buffer 2×. Клик сразу справа от кнопки внутри нижней полосы не включает tactical в exploration и не выключает tactical. При выбранной цели тот же клик снимает selection через обработчик карты: событие не перехватывается как нажатие переключателя. Проверены letterbox-поля, сужение control в viewport шириной 100 и скрытие при размере <48. Existing tests переключения, busy, удержания и совпавших T/tap также прошли. `git diff --check` — успешно.
+
+Это автоматическая регрессионная проверка input/viewport; новые ручные playtests, desktop smoke и Android build для этой узкой UI-правки не выполнялись. Ранее перечисленные ограничения ручной приёмки сохраняются.
