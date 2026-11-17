@@ -75,6 +75,11 @@ public final class HunterState {
         double deltaSeconds,
         WorldGeometry geometry
     ) {
+        move(directionX, directionY, deltaSeconds, geometry, null, 0.0);
+    }
+
+    public void move(double directionX, double directionY, double deltaSeconds, WorldGeometry geometry,
+                     WorldPosition body, double bodyRadius) {
         if (!Double.isFinite(directionX) || !Double.isFinite(directionY)) {
             throw new IllegalArgumentException("Movement direction must be finite");
         }
@@ -99,6 +104,6 @@ public final class HunterState {
         double distance = movementSpeed * deltaSeconds;
         double desiredX = directionX * distance;
         double desiredY = directionY * distance;
-        position = geometry.resolveMovement(position, radius, desiredX, desiredY);
+        position = geometry.resolveMovement(position, radius, desiredX, desiredY, body, bodyRadius);
     }
 }

@@ -9,6 +9,12 @@ import java.util.List;
 
 /** Патруль по неизменяемому двустороннему маршруту с паузами в waypoint. */
 public final class CreaturePatrolState {
+    public enum Behavior { PATROL, CHASE, SEARCH, RETURN }
+
+    private static final double CHASE_SPEED = 4.0;
+    private static final double SEARCH_SPEED = 3.0;
+    private static final double RETURN_SPEED = 2.0;
+    private static final double SEARCH_SECONDS = 2.0;
     private final List<WorldPosition> route;
     private final WorldGeometry geometry;
     private final double movementSpeed;
@@ -22,6 +28,10 @@ public final class CreaturePatrolState {
     private int targetIndex = 1;
     private int direction = 1;
     private double waitRemaining;
+    private Behavior behavior = Behavior.PATROL;
+    private WorldPosition patrolPosition;
+    private double searchRemaining;
+    private boolean returnBlocked;
 
     public CreaturePatrolState(List<WorldPosition> route, double movementSpeed, double radius,
                                double pauseSeconds, double detectionRadius, WorldGeometry geometry) {
@@ -55,6 +65,7 @@ public final class CreaturePatrolState {
         this.radius = radius;
         this.pauseSeconds = pauseSeconds;
         position = copy.get(0);
+        patrolPosition = position;
         waitRemaining = pauseSeconds;
     }
 
@@ -80,6 +91,10 @@ public final class CreaturePatrolState {
         return alerted;
     }
 
+    public Behavior getBehavior() { return behavior; }
+    public double getSearchRemaining() { return searchRemaining; }
+    public boolean isReturnBlocked() { return returnBlocked; }
+
     /** Последняя замеченная позиция; null до первого обнаружения. */
     public WorldPosition getLastSeenHunterPosition() {
         return lastSeenHunterPosition;
@@ -87,9 +102,7 @@ public final class CreaturePatrolState {
 
     /** Проверяет обнаружение до шага патруля, в том числе при нулевом интервале. */
     public void update(double deltaSeconds, WorldPosition hunterPosition) {
-        if (!Double.isFinite(deltaSeconds) || deltaSeconds < 0.0) {
-            throw new IllegalArgumentException("Delta time must be finite and non-negative");
-        }
+        validateDelta(deltaSeconds);
         checkDetection(hunterPosition);
         advancePatrol(deltaSeconds);
     }
@@ -123,6 +136,10 @@ public final class CreaturePatrolState {
         targetIndex = source.targetIndex;
         direction = source.direction;
         waitRemaining = source.waitRemaining;
+        behavior = source.behavior;
+        patrolPosition = source.patrolPosition;
+        searchRemaining = source.searchRemaining;
+        returnBlocked = source.returnBlocked;
     }
 
     /** Чистая проверка текущего контакта, независимо от истории alerted. */
@@ -139,23 +156,109 @@ public final class CreaturePatrolState {
     }
 
     public boolean checkDetection(WorldPosition hunterPosition) {
-        boolean visible = canDetect(hunterPosition);
         boolean previouslyAlerted = alerted;
-        if (visible) {
-            alerted = true;
-            lastSeenHunterPosition = hunterPosition;
-        }
+        observeHunter(hunterPosition);
         return !previouslyAlerted && alerted;
     }
 
-    /** Продвигает только патруль; обнаружение вызывается координатором отдельно. */
-    public void advancePatrol(double deltaSeconds) {
-        if (!Double.isFinite(deltaSeconds) || deltaSeconds < 0.0) {
-            throw new IllegalArgumentException("Delta time must be finite and non-negative");
+    /** Запоминает только подтверждённую зрением позицию. */
+    public boolean observeHunter(WorldPosition hunterPosition) {
+        if (canDetect(hunterPosition)) {
+            alerted = true;
+            lastSeenHunterPosition = hunterPosition;
+            behavior = Behavior.CHASE;
+            searchRemaining = 0.0;
+            returnBlocked = false;
+            return true;
         }
-        if (alerted || isDefeated()) return;
-        if (!geometry.isCirclePathValid(position, route.get(targetIndex), radius)) return;
+        if (!isDefeated() && behavior == Behavior.CHASE) {
+            behavior = Behavior.SEARCH;
+            searchRemaining = SEARCH_SECONDS;
+        }
+        return false;
+    }
 
+    /** Один ход после замера видимости. Позиция тела нужна только для столкновений. */
+    public void advanceExploration(double seconds, WorldPosition body, double bodyRadius) {
+        validateDelta(seconds);
+        if (isDefeated() || seconds == 0.0) return;
+
+        if (behavior == Behavior.PATROL && !position.equals(patrolPosition)) {
+            behavior = Behavior.RETURN;
+        }
+        switch (behavior) {
+            case PATROL:
+                advancePatrol(seconds, body, bodyRadius);
+                patrolPosition = position;
+                break;
+            case CHASE:
+                moveTowardLastSeen(seconds * CHASE_SPEED, body, bodyRadius);
+                break;
+            case SEARCH:
+                boolean finished = finishesPhase(seconds, searchRemaining, SEARCH_SECONDS);
+                moveTowardLastSeen(Math.min(seconds, searchRemaining) * SEARCH_SPEED, body, bodyRadius);
+                searchRemaining = finished ? 0.0 : searchRemaining - seconds;
+                break;
+            case RETURN:
+                returnToPatrol(seconds * RETURN_SPEED, body, bodyRadius);
+                break;
+        }
+    }
+
+    /** Истечение поиска применяется после проверки, чтобы новый контакт имел приоритет. */
+    public void finishExplorationStep() {
+        if (!isDefeated() && behavior == Behavior.SEARCH && searchRemaining == 0.0) {
+            behavior = Behavior.RETURN;
+        }
+    }
+
+    private void moveTowardLastSeen(double distance, WorldPosition body, double bodyRadius) {
+        WorldPosition end = toward(lastSeenHunterPosition, distance);
+        position = geometry.resolveStraightMovement(position, end, radius, body, bodyRadius);
+    }
+
+    private WorldPosition toward(WorldPosition target, double distance) {
+        double dx = target.getX() - position.getX();
+        double dy = target.getY() - position.getY();
+        double length = Math.hypot(dx, dy);
+        if (length <= distance) return target;
+        double fraction = distance / length;
+        return position.translate(dx * fraction, dy * fraction);
+    }
+
+    private void returnToPatrol(double distance, WorldPosition body, double bodyRadius) {
+        WorldPosition origin = route.get(targetIndex - direction);
+        WorldPosition target = route.get(targetIndex);
+        if (tryReturnTo(patrolPosition, distance, body, bodyRadius)
+            || tryReturnTo(origin, distance, body, bodyRadius)) return;
+        if (tryReturnTo(target, distance, body, bodyRadius)) {
+            if (behavior == Behavior.PATROL) arriveAtWaypoint();
+            return;
+        }
+        returnBlocked = true;
+    }
+
+    private boolean tryReturnTo(WorldPosition target, double distance, WorldPosition body, double bodyRadius) {
+        if (!geometry.isCirclePathValid(position, target, radius, body, bodyRadius)) return false;
+        position = toward(target, distance);
+        returnBlocked = false;
+        if (position.equals(target)) {
+            patrolPosition = position;
+            behavior = Behavior.PATROL;
+        }
+        return true;
+    }
+
+    /** Продвигает только патруль, без полного хода exploration. */
+    public void advancePatrol(double deltaSeconds) {
+        validateDelta(deltaSeconds);
+        if (isDefeated() || behavior != Behavior.PATROL) return;
+        if (!geometry.isCirclePathValid(position, route.get(targetIndex), radius)) return;
+        advancePatrol(deltaSeconds, null, 0.0);
+        patrolPosition = position;
+    }
+
+    private void advancePatrol(double deltaSeconds, WorldPosition body, double bodyRadius) {
         double remaining = deltaSeconds;
         while (remaining > 0.0) {
             if (waitRemaining > 0.0) {
@@ -176,17 +279,28 @@ public final class CreaturePatrolState {
                     target.getY() - origin.getY()) / movementSpeed;
                 if (!finishesPhase(remaining, arrivalSeconds, segmentSeconds)) {
                     double fraction = remaining / arrivalSeconds;
-                    position = position.translate(dx * fraction, dy * fraction);
+                    WorldPosition end = position.translate(dx * fraction, dy * fraction);
+                    if (geometry.isCirclePathValid(position, end, radius, body, bodyRadius)) position = end;
                     return;
                 }
-                // Присваивание waypoint исключает накопление overshoot при прибытии.
+                if (!geometry.isCirclePathValid(position, target, radius, body, bodyRadius)) return;
                 position = target;
                 remaining = Math.max(0.0, remaining - arrivalSeconds);
-                if (targetIndex == route.size() - 1) direction = -1;
-                if (targetIndex == 0) direction = 1;
-                targetIndex += direction;
-                waitRemaining = pauseSeconds;
+                arriveAtWaypoint();
             }
+        }
+    }
+
+    private void arriveAtWaypoint() {
+        if (targetIndex == route.size() - 1) direction = -1;
+        if (targetIndex == 0) direction = 1;
+        targetIndex += direction;
+        waitRemaining = pauseSeconds;
+    }
+
+    private static void validateDelta(double deltaSeconds) {
+        if (!Double.isFinite(deltaSeconds) || deltaSeconds < 0.0) {
+            throw new IllegalArgumentException("Delta time must be finite and non-negative");
         }
     }
 

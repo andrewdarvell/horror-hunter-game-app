@@ -26,6 +26,9 @@ class TacticalBreakoutPointerTest extends TacticalPointerTest {
         tick(s,100); assertSame(position,scene.getHunterPosition());
         tick(s,.24); assertSame(position,scene.getHunterPosition()); assertFalse(s.isBusy());
         assertFalse(s.isBreakoutSelecting()); assertEquals(3,scene.getTacticalTimeUnits());
+        double startX = scene.getHunterPosition().getX();
+        s.updateScene(-1, 0, .01, false);
+        assertTrue(scene.getHunterPosition().getX() < startX);
         s.hide();
     }
     @Test void cancelInvalidDistanceResizeAndSecondaryPointerDoNotExecute() {

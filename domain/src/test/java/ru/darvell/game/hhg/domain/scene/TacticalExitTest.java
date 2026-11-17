@@ -62,20 +62,28 @@ class TacticalExitTest {
         assertEquals(TacticalAttackResult.Outcome.TARGET_DEFEATED,s.tryAttackCreature(new CellCoordinates(0,0)).getOutcome());
     }
     @Test void contactFailureDoesNotRetryUntilRealSeparation() {
-        List<StaticAabb> boxes=new ArrayList<>();
-        for(int x=-1;x<=1;x++) for(int y=-1;y<=1;y++) boxes.add(new StaticAabb(x+.45,y+.45,.1,.1));
-        WorldGeometry g=new WorldGeometry(boxes);
-        WorldSceneState s=new WorldSceneState(new HunterState(new WorldPosition(8,0),1,.4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(3,0),new WorldPosition(3,1)),1,.3,.5,4,g),
-            new TacticalGrid(0,0,1),g);
-        s.enterTactical();assertEquals(TacticalExitResult.SUCCESS,s.tryExitTactical());
-        s.update(0,-1,.5,false);
-        assertEquals(TacticalEntryResult.Outcome.NO_VALID_PLACEMENT,s.update(-1,0,8.5,false));
-        assertNull(s.update(0,0,0,false));assertNull(s.update(1,0,2,false)); // valid placement now, same contact
-        assertEquals(SceneMode.EXPLORATION,s.getMode());
-        s.update(1,0,7,false); // outside radius
-        assertEquals(TacticalEntryResult.Outcome.SUCCESS,s.update(-1,0,3,false));
-        assertTrue(s.isCreatureAlerted());
+        WorldGeometry geometry = new WorldGeometry(Arrays.asList(
+            new StaticAabb(4, 1.2, .55, 1.8), new StaticAabb(5.45, 1.2, 1.55, 1.8)));
+        TacticalGrid grid = new TacticalGrid(0, 0, 1);
+        WorldSceneState scene = new WorldSceneState(new HunterState(new WorldPosition(2.5, .5), 5, .4),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5, .5), new WorldPosition(.5, 1.5)),
+                2, .3, .5, 3, geometry), grid, geometry);
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.update(0, 0, 0, false));
+        scene.tryMoveHunterTo(new CellCoordinates(3, 0));
+        scene.tryMoveHunterTo(new CellCoordinates(4, 0));
+        assertEquals(TacticalExitResult.SUCCESS, scene.tryExitTactical());
+        assertNull(scene.update(1, 0, .10, false));
+        assertNull(scene.update(0, 1, .16, false));
+        assertEquals(TacticalEntryResult.Outcome.NO_VALID_PLACEMENT, scene.update(0, 0, .28, false));
+        assertNull(scene.update(0, -1, .16, false));
+        assertEquals(SceneMode.EXPLORATION, scene.getMode());
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, new TacticalEntryPlanner().plan(
+            scene.getHunterPosition(), .4, scene.getCreaturePosition(), .3, grid, geometry).getOutcome());
+        // Охотник выходит за радиус своим ходом. Следующий ход поиска снова создаёт контакт.
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.update(1, 0, 2, false));
+        assertTrue(scene.getHunterBeforeEntry().getX() > 5.5);
+        assertEquals(SceneMode.TACTICAL, scene.getMode());
+        assertTrue(scene.isCreatureAlerted());
     }
     @Test void defeatedHunterCannotExitAndAlertedRecontactWorks() {
         WorldGeometry g=WorldGeometry.empty();

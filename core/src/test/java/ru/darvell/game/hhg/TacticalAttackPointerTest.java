@@ -48,7 +48,8 @@ class TacticalAttackPointerTest extends TacticalPointerTest {
         up(); down(1,0); up();
         assertEquals(4, scene.getTacticalTimeUnits());
         s.updateScene(-1, 0, .1, false);
-        assertEquals(position.translate(-.1, 0), scene.getHunterPosition());
+        assertEquals(position.getX() - .1, scene.getHunterPosition().getX(), 1e-10);
+        assertEquals(position.getY(), scene.getHunterPosition().getY());
         assertSame(victory, scene.getLastResolution());
 
         handler.touchDown(modeX, modeY, 0, Input.Buttons.LEFT);
