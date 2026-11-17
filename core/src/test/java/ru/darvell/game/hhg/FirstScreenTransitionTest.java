@@ -33,7 +33,7 @@ class FirstScreenTransitionTest {
         assertNull(f.scene.getLastSeenHunterPosition());
         Object[] frozen = snapshot(f.scene);
 
-        assertEquals(Outcome.ALREADY_TACTICAL, f.screen.updateScene(1, 1, 0.11, true));
+        assertNull(f.screen.updateScene(1, 1, 0.11, true));
         assertEquals(p(0.25, 0.25), f.screen.getVisualHunterPosition());
         assertEquals(p(5.25, 0.25), f.screen.getVisualCreaturePosition());
         assertArrayEquals(frozen, snapshot(f.scene));
@@ -42,7 +42,7 @@ class FirstScreenTransitionTest {
         WorldPosition creatureEnd = f.screen.getVisualCreaturePosition();
         assertSame(f.scene.getHunterPosition(), hunterEnd);
         assertSame(f.scene.getCreaturePosition(), creatureEnd);
-        f.screen.updateScene(1, 1, 1000, true);
+        f.screen.updateScene(1, 1, 1000, false);
         assertSame(hunterEnd, f.screen.getVisualHunterPosition());
         assertSame(creatureEnd, f.screen.getVisualCreaturePosition());
         assertArrayEquals(frozen, snapshot(f.scene));

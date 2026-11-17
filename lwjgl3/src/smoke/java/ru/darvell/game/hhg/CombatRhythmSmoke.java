@@ -78,6 +78,19 @@ public final class CombatRhythmSmoke extends ApplicationAdapter {
                     +" HP="+scene.getHunterHealth()+"/"+scene.getCreatureHealth()+" phase="+CombatHud.phase(scene));
                 return;
             }
+            if(scenario==0) {
+                WorldPosition body=scene.getCreaturePosition(), hunter=scene.getHunterPosition();
+                Object history=scene.getLastResolution();
+                screen.updateScene(0,0,0,true);
+                check(scene.getMode()==SceneMode.EXPLORATION && scene.getPlacement()==null);
+                check(scene.getTacticalTimeUnits()==9 && scene.getHunterHealth()==4);
+                check(scene.getHunterPosition().equals(hunter));
+                screen.render(1f/60);
+                screen.updateScene(0,0,0,true);
+                check(scene.getMode()==SceneMode.TACTICAL && !scene.getPlacement().creatureCell().isPresent());
+                check(scene.getCreaturePosition().equals(body) && scene.getLastResolution()==history);
+                System.out.println("SAFE_EXIT_SMOKE_OK victory/exit/hunter-only/history");
+            }
             if(scenario==0) check(scene.getHunterHealth()==4 && scene.getCreatureHealth()==0 && scene.getTacticalTimeUnits()==9);
             if(scenario==1) check(scene.getHunterHealth()==0 && scene.getCreatureHealth()==2 && scene.getTacticalTimeUnits()==13);
             if(scenario==2) check(scene.getHunterHealth()==2 && scene.getCreatureHealth()==1 && scene.getTacticalTimeUnits()==5);

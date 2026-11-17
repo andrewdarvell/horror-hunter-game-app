@@ -92,7 +92,7 @@ class TacticalPointerTest {
     }
     void down(int x,int y) { int[] p=target(x,y); handler.touchDown(p[0],p[1],0,Input.Buttons.LEFT); }
     void up() { handler.touchUp(0,0,0,Input.Buttons.LEFT); }
-    void tick(FirstScreen s,double dt) { s.updateScene(1,1,dt,true); }
+    void tick(FirstScreen s,double dt) { s.updateScene(1,1,dt,false); }
     void ready(FirstScreen s) {
         // Численная установка bounds заменяет только OpenGL apply в resize.
         try { java.lang.reflect.Field f=FirstScreen.class.getDeclaredField("pointerReady"); f.setAccessible(true); f.set(s,true); }
@@ -101,7 +101,7 @@ class TacticalPointerTest {
     @Test void pointerRouteBusyHoldCompletionAndNoReplay() {
         WorldSceneState scene=scene(); FirstScreen s=screen(scene); s.show(); ready(s);
         down(1,0); up(); assertEquals(SceneMode.EXPLORATION,scene.getMode());
-        tick(s,0); down(1,0); tick(s,1); down(1,0);
+        s.updateScene(0,0,0,true); down(1,0); tick(s,1); down(1,0);
         assertEquals(new CellCoordinates(0,0),scene.getPlacement().getHunterCell());
         up(); down(1,0); assertEquals(new CellCoordinates(1,0),scene.getPlacement().getHunterCell());
         Object placement=scene.getPlacement(); WorldPosition creature=scene.getCreaturePosition();

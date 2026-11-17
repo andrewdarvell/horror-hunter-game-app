@@ -24,6 +24,33 @@ public final class TacticalEntryPlanner {
             candidates(creature, creatureRadius, creatureSource, grid, geometry));
     }
 
+    public TacticalEntryResult planHunterOnly(WorldPosition hunter, double radius,
+                                              TacticalGrid grid, WorldGeometry geometry) {
+        if (grid == null || geometry == null || !valid(hunter, radius, geometry)) {
+            return TacticalEntryResult.failure(TacticalEntryResult.Outcome.INVALID_INPUT);
+        }
+        CellCoordinates source = checkedCell(hunter, grid);
+        if (source == null) return TacticalEntryResult.failure(TacticalEntryResult.Outcome.INVALID_INPUT);
+        return selectHunter(candidates(hunter, radius, source, grid, geometry));
+    }
+
+    static TacticalEntryResult selectHunter(List<Candidate> candidates) {
+        Candidate best = null;
+        for (Candidate candidate : candidates) {
+            if (best == null || compareHunter(candidate, best) < 0) best = candidate;
+        }
+        return best == null ? TacticalEntryResult.failure(TacticalEntryResult.Outcome.NO_VALID_PLACEMENT)
+            : TacticalEntryResult.hunterOnly(TacticalPlacement.hunterOnly(best.cell), best.center);
+    }
+
+    private static int compareHunter(Candidate a, Candidate b) {
+        int result = Integer.compare(a.moved, b.moved);
+        if (result == 0) result = Double.compare(a.distance, b.distance);
+        if (result == 0) result = Integer.compare(a.cell.getX(), b.cell.getX());
+        if (result == 0) result = Integer.compare(a.cell.getY(), b.cell.getY());
+        return result;
+    }
+
     private static boolean valid(WorldPosition p, double radius, WorldGeometry geometry) {
         return p != null && Double.isFinite(p.getX()) && Double.isFinite(p.getY())
             && Double.isFinite(radius) && radius > 0.0 && geometry.isCirclePositionValid(p, radius);
