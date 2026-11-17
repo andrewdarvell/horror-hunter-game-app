@@ -1,6 +1,6 @@
 # tactical-breakout: verification реализации
 
-База: `d3fa955` (main после merge planning PR #29). Ветка: `feat/tactical-breakout-implementation`. B1–B5 утверждены владельцем, финальное planning review и запрос implementation получены. Реализация передаётся на отдельную приёмку; main specs и архивы не изменялись.
+База: `d3fa955` (main после merge planning PR #29). Ветка: `feat/tactical-breakout-implementation`. Implementation PR: [#30](https://github.com/andrewdarvell/horror-hunter-game-app/pull/30). B1–B5 утверждены владельцем, финальное planning review и запрос implementation получены. Реализация передаётся на отдельную приёмку; main specs и архивы не изменялись.
 
 ## Реализованное поведение
 

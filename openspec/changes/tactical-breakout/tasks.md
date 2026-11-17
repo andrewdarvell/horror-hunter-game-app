@@ -4,9 +4,9 @@
 
 ## 1. Решения владельца и архитектурное review
 
-- [x] 1.1 Владелец утвердил B1–B5 в последнем рекомендованном варианте: любая клетка в Euclidean 2..4, D=1+ceil(L/2) и 2–3 units, движение на unit1 после старой фазы укуса, продолжение после нелетального укуса, прерывание при смерти с сохранением достигнутой позиции, отсутствие промежуточных атак, четыре исхода, общий safe-exit/recontact без grace period и mouse/touch endpoint selection с отдельным confirm/точным preview. Утверждение зафиксировано в design, delta-spec и PR; implementation не запрошена.
+- [x] 1.1 Владелец утвердил B1–B5 в последнем рекомендованном варианте: любая клетка в Euclidean 2..4, D=1+ceil(L/2) и 2–3 units, движение на unit1 после старой фазы укуса, продолжение после нелетального укуса, прерывание при смерти с сохранением достигнутой позиции, отсутствие промежуточных атак, четыре исхода, общий safe-exit/recontact без grace period и mouse/touch endpoint selection с отдельным confirm/точным preview. Утверждение зафиксировано в design, delta-spec и planning PR #29; отдельный запрос implementation получен после финального review.
 - [x] 1.2 Завершить архитектурное review: Java 8 domain без libGDX, единый result/lastResolution, общий safe-exit predicate, один progression bite cycle, атомарная публикация HP/time/phase/mode/contact. Подтвердить отсутствие нужды в аналитическом path-control helper на основании достижимых сценариев; не вводить его или второй scheduler.
-- [ ] 1.3 Проверить базу и незакрытые review/manual задачи combat-rhythm/safe-tactical-exit; получить отдельный запрос на implementation и создать отдельную ветку/PR. Planning approval и validation не считать реализацией или приёмкой зависимостей.
+- [x] 1.3 Проверить базу и незакрытые review/manual задачи combat-rhythm/safe-tactical-exit; получить отдельный запрос на implementation и создать отдельную ветку/PR. Planning approval и validation не считать реализацией или приёмкой зависимостей.
 
 ## 2. Доменная допустимость и физический путь
 
@@ -44,4 +44,6 @@
 - [ ] 6.3 Отдельно провести ручной playtest mouse/touch-эмуляции: выбор короткой цели в проходе и диагонали, читаемость стоимости/урона/места смерти, сравнение со шагом, movement после выхода, resize/portrait/landscape. Приложить screenshots/запись и оценку владельца; smoke не считать ручной приёмкой.
 - [ ] 6.4 При доступном SDK 36 выполнить ./gradlew :android:assembleDebug и touch playtest на устройстве/эмуляторе. Раздельно указать build, эмуляцию и фактический UI playtest; ограничения окружения записать явно.
 - [x] 6.5 Выполнить OPENSPEC_TELEMETRY=0 openspec validate tactical-breakout --strict --no-interactive и git diff --check; подготовить verification.md с реальными командами, результатами, ограничениями и соответствием acceptance criteria. Не закрывать незавершённые manual задачи других changes.
-- [ ] 6.6 Передать отдельный implementation PR владельцу на приёмку. Только после приёмки отдельно синхронизировать main specs с зависимостью safe-tactical-exit и архивировать; planning PR не разрешает implementation, merge, sync или archive автоматически.
+- [x] 6.6 Передать отдельный implementation PR владельцу на приёмку. Только после приёмки отдельно синхронизировать main specs с зависимостью safe-tactical-exit и архивировать; planning PR не разрешает implementation, merge, sync или archive автоматически.
+
+Реализация передана в PR #30. Пункт 6.6 отмечает передачу на review, **не приёмку**; sync/archive не выполнялись. 6.3 и 6.4 открыты: ручного playtest/оценки владельца и Android touch проверки нет, хотя APK собран.
