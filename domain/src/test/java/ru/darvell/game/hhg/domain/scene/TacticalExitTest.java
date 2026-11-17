@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TacticalExitTest {
     WorldSceneState scene(int x, int y, double detection, WorldGeometry g, int creatureDamage) {
         return new WorldSceneState(new HunterState(new WorldPosition(x+.5,y+.5),1,.1),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)),1,.1,.5,detection,g)
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, detection, .5), .1,g)
                 .withDamage(creatureDamage), new TacticalGrid(0,0,1),g);
     }
     @Test void threatMatrixAndPureRefusal() {
@@ -67,7 +67,7 @@ class TacticalExitTest {
         TacticalGrid grid = new TacticalGrid(0, 0, 1);
         WorldSceneState scene = new WorldSceneState(new HunterState(new WorldPosition(2.5, .5), 5, .4),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(.5, .5), new WorldPosition(.5, 1.5)),
-                2, .3, .5, 3, geometry), grid, geometry);
+                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3, geometry), grid, geometry);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.update(0, 0, 0, false));
         scene.tryMoveHunterTo(new CellCoordinates(3, 0));
         scene.tryMoveHunterTo(new CellCoordinates(4, 0));
@@ -88,7 +88,7 @@ class TacticalExitTest {
     @Test void defeatedHunterCannotExitAndAlertedRecontactWorks() {
         WorldGeometry g=WorldGeometry.empty();
         WorldSceneState dead=new WorldSceneState(new HunterState(new WorldPosition(4.5,.5),1,.1).withDamage(4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)),1,.1,.5,3,g),new TacticalGrid(0,0,1),g);
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .1,g),new TacticalGrid(0,0,1),g);
         dead.enterTactical();assertEquals(TacticalExitResult.HUNTER_DEFEATED,dead.tryExitTactical());
         WorldSceneState s=scene(3,0,3,g,0);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS,s.update(0,0,0,false));

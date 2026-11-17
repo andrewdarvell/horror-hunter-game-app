@@ -3,6 +3,7 @@ package ru.darvell.game.hhg;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import org.junit.jupiter.api.Test;
+import ru.darvell.game.hhg.domain.actor.CreatureBehaviorConfig;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
 import ru.darvell.game.hhg.domain.actor.HunterState;
 import ru.darvell.game.hhg.domain.scene.SceneMode;
@@ -208,7 +209,7 @@ class FirstScreenTransitionTest {
             TacticalGrid grid = new TacticalGrid(0, 0, 1);
             scene = new WorldSceneState(new HunterState(hunter, speed, 0.4),
                 new CreaturePatrolState(Arrays.asList(creature, creature.translate(0, 1)),
-                    2, 0.3, 0.5, 3, geometry), grid, geometry);
+                    new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry), grid, geometry);
             screen = new FirstScreen(scene, grid, geometry, viewport, null);
         }
     }

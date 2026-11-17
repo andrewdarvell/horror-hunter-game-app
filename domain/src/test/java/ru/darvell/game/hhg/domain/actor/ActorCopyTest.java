@@ -112,7 +112,7 @@ class ActorCopyTest {
         assertFalse(copy.checkDetection(p(0, 1)));
         assertEquals(p(0, 1), copy.getLastSeenHunterPosition());
         CreaturePatrolState behindWall = new CreaturePatrolState(Arrays.asList(p(3, 0), p(3, 2)),
-            2, 0.2, 0.5, 10, geometry);
+            new CreatureBehaviorConfig(2, 4, 3, 2, 2, 10, 0.5), 0.2, geometry);
         assertFalse(behindWall.copy().checkDetection(p(6, 0)));
     }
 
@@ -175,7 +175,7 @@ class ActorCopyTest {
 
     private CreaturePatrolState creature() {
         return new CreaturePatrolState(Arrays.asList(p(0, 0), p(1, 0), p(1, 2)),
-            2, 0.2, 0.5, 1.5, geometry);
+            new CreatureBehaviorConfig(2, 4, 3, 2, 2, 1.5, 0.5), 0.2, geometry);
     }
 
     private Object[] metadata(CreaturePatrolState creature) {

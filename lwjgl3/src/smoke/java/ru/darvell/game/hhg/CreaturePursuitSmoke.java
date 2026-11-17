@@ -13,6 +13,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
+import ru.darvell.game.hhg.domain.actor.CreatureBehaviorConfig;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState.Behavior;
 import ru.darvell.game.hhg.domain.actor.HunterState;
@@ -159,7 +160,7 @@ public final class CreaturePursuitSmoke extends ApplicationAdapter {
     }
 
     private static CreaturePatrolState patrol(WorldPosition from, WorldPosition to, WorldGeometry geometry) {
-        return new CreaturePatrolState(Arrays.asList(from, to), 2, .3, .5, 3, geometry);
+        return new CreaturePatrolState(Arrays.asList(from, to), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3, geometry);
     }
 
     private static WorldPosition p(double x, double y) { return new WorldPosition(x, y); }

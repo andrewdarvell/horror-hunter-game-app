@@ -11,16 +11,10 @@ import java.util.List;
 public final class CreaturePatrolState {
     public enum Behavior { PATROL, CHASE, SEARCH, RETURN }
 
-    private static final double CHASE_SPEED = 4.0;
-    private static final double SEARCH_SPEED = 3.0;
-    private static final double RETURN_SPEED = 2.0;
-    private static final double SEARCH_SECONDS = 2.0;
     private final List<WorldPosition> route;
     private final WorldGeometry geometry;
-    private final double movementSpeed;
+    private final CreatureBehaviorConfig config;
     private final double radius;
-    private final double pauseSeconds;
-    private final double detectionRadius;
     private boolean alerted;
     private WorldPosition lastSeenHunterPosition;
     private int health = 2;
@@ -33,16 +27,13 @@ public final class CreaturePatrolState {
     private double searchRemaining;
     private boolean returnBlocked;
 
-    public CreaturePatrolState(List<WorldPosition> route, double movementSpeed, double radius,
-                               double pauseSeconds, double detectionRadius, WorldGeometry geometry) {
+    public CreaturePatrolState(List<WorldPosition> route, CreatureBehaviorConfig config, double radius,
+                               WorldGeometry geometry) {
         if (route == null || route.size() < 2 || route.size() > 3 || geometry == null) {
             throw new IllegalArgumentException("Patrol needs two or three waypoints and world geometry");
         }
-        requirePositiveFinite(movementSpeed, "Movement speed");
+        if (config == null) throw new IllegalArgumentException("Creature behavior config must be present");
         requirePositiveFinite(radius, "Radius");
-        requirePositiveFinite(pauseSeconds, "Pause duration");
-        requirePositiveFinite(detectionRadius, "Detection radius");
-        this.detectionRadius = detectionRadius;
         List<WorldPosition> copy = new ArrayList<>(route);
         for (WorldPosition waypoint : copy) {
             if (!geometry.isCirclePositionValid(waypoint, radius)) {
@@ -54,19 +45,18 @@ public final class CreaturePatrolState {
             WorldPosition to = copy.get(i);
             double length = Math.hypot(to.getX() - from.getX(), to.getY() - from.getY());
             requirePositiveFinite(length, "Segment length");
-            requirePositiveFinite(length / movementSpeed, "Segment duration");
+            requirePositiveFinite(length / config.getPatrolSpeed(), "Segment duration");
             if (!geometry.isCirclePathValid(from, to, radius)) {
                 throw new IllegalArgumentException("Patrol segment must be valid in world geometry");
             }
         }
         this.route = Collections.unmodifiableList(copy);
         this.geometry = geometry;
-        this.movementSpeed = movementSpeed;
+        this.config = config;
         this.radius = radius;
-        this.pauseSeconds = pauseSeconds;
         position = copy.get(0);
         patrolPosition = position;
-        waitRemaining = pauseSeconds;
+        waitRemaining = config.getPauseSeconds();
     }
 
     public int getHealth() { return health; }
@@ -91,6 +81,7 @@ public final class CreaturePatrolState {
         return alerted;
     }
 
+    public CreatureBehaviorConfig getBehaviorConfig() { return config; }
     public Behavior getBehavior() { return behavior; }
     public double getSearchRemaining() { return searchRemaining; }
     public boolean isReturnBlocked() { return returnBlocked; }
@@ -126,10 +117,8 @@ public final class CreaturePatrolState {
         health = source.health;
         route = source.route;
         geometry = source.geometry;
-        movementSpeed = source.movementSpeed;
+        config = source.config;
         radius = source.radius;
-        pauseSeconds = source.pauseSeconds;
-        detectionRadius = source.detectionRadius;
         alerted = source.alerted;
         lastSeenHunterPosition = source.lastSeenHunterPosition;
         position = source.position;
@@ -151,7 +140,7 @@ public final class CreaturePatrolState {
         double distance = Math.hypot(hunterPosition.getX() - position.getX(),
             hunterPosition.getY() - position.getY());
         if (!Double.isFinite(distance)) throw new IllegalArgumentException("Hunter distance must be finite");
-        return !isDefeated() && distance <= detectionRadius
+        return !isDefeated() && distance <= config.getDetectionRadius()
             && geometry.hasLineOfSight(position, hunterPosition);
     }
 
@@ -172,8 +161,8 @@ public final class CreaturePatrolState {
             return true;
         }
         if (!isDefeated() && behavior == Behavior.CHASE) {
-            behavior = Behavior.SEARCH;
-            searchRemaining = SEARCH_SECONDS;
+            searchRemaining = config.getSearchSeconds();
+            behavior = searchRemaining == 0.0 ? Behavior.RETURN : Behavior.SEARCH;
         }
         return false;
     }
@@ -192,15 +181,15 @@ public final class CreaturePatrolState {
                 patrolPosition = position;
                 break;
             case CHASE:
-                moveTowardLastSeen(seconds * CHASE_SPEED, body, bodyRadius);
+                moveTowardLastSeen(seconds * config.getChaseSpeed(), body, bodyRadius);
                 break;
             case SEARCH:
-                boolean finished = finishesPhase(seconds, searchRemaining, SEARCH_SECONDS);
-                moveTowardLastSeen(Math.min(seconds, searchRemaining) * SEARCH_SPEED, body, bodyRadius);
+                boolean finished = finishesPhase(seconds, searchRemaining, config.getSearchSeconds());
+                moveTowardLastSeen(Math.min(seconds, searchRemaining) * config.getSearchSpeed(), body, bodyRadius);
                 searchRemaining = finished ? 0.0 : searchRemaining - seconds;
                 break;
             case RETURN:
-                returnToPatrol(seconds * RETURN_SPEED, body, bodyRadius);
+                returnToPatrol(seconds * config.getReturnSpeed(), body, bodyRadius);
                 break;
         }
     }
@@ -262,7 +251,7 @@ public final class CreaturePatrolState {
         double remaining = deltaSeconds;
         while (remaining > 0.0) {
             if (waitRemaining > 0.0) {
-                if (finishesPhase(remaining, waitRemaining, pauseSeconds)) {
+                if (finishesPhase(remaining, waitRemaining, config.getPauseSeconds())) {
                     remaining = Math.max(0.0, remaining - waitRemaining);
                     waitRemaining = 0.0;
                 } else {
@@ -273,10 +262,10 @@ public final class CreaturePatrolState {
                 WorldPosition target = route.get(targetIndex);
                 double dx = target.getX() - position.getX();
                 double dy = target.getY() - position.getY();
-                double arrivalSeconds = Math.hypot(dx, dy) / movementSpeed;
+                double arrivalSeconds = Math.hypot(dx, dy) / config.getPatrolSpeed();
                 WorldPosition origin = route.get(targetIndex - direction);
                 double segmentSeconds = Math.hypot(target.getX() - origin.getX(),
-                    target.getY() - origin.getY()) / movementSpeed;
+                    target.getY() - origin.getY()) / config.getPatrolSpeed();
                 if (!finishesPhase(remaining, arrivalSeconds, segmentSeconds)) {
                     double fraction = remaining / arrivalSeconds;
                     WorldPosition end = position.translate(dx * fraction, dy * fraction);
@@ -295,7 +284,7 @@ public final class CreaturePatrolState {
         if (targetIndex == route.size() - 1) direction = -1;
         if (targetIndex == 0) direction = 1;
         targetIndex += direction;
-        waitRemaining = pauseSeconds;
+        waitRemaining = config.getPauseSeconds();
     }
 
     private static void validateDelta(double deltaSeconds) {

@@ -1,5 +1,6 @@
 package ru.darvell.game.hhg.domain.scene;
 
+import ru.darvell.game.hhg.domain.actor.CreatureBehaviorConfig;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
 import ru.darvell.game.hhg.domain.actor.HunterState;
 import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
@@ -63,7 +64,7 @@ class WorldSceneStateTest {
         }
         WorldGeometry geometry = new WorldGeometry(boxes);
         CreaturePatrolState creature = new CreaturePatrolState(Arrays.asList(
-            new WorldPosition(3, 0), new WorldPosition(3, 1)), 2, 0.3, 0.5, 3, geometry);
+            new WorldPosition(3, 0), new WorldPosition(3, 1)), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry);
         WorldSceneState scene = new WorldSceneState(new HunterState(new WorldPosition(0, 0), 1, 0.4),
             creature, unit, geometry);
         assertEquals(TacticalEntryResult.Outcome.NO_VALID_PLACEMENT, scene.update(0, 0, 0, false));
@@ -101,13 +102,13 @@ class WorldSceneStateTest {
     private static WorldSceneState demoScene(TacticalGrid grid, WorldGeometry geometry) {
         return new WorldSceneState(new HunterState(new WorldPosition(0, 0), 5, 0.4),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(5, 0), new WorldPosition(5, 1)),
-                2, 0.3, 0.5, 3, geometry), grid, geometry);
+                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry), grid, geometry);
     }
 
     private static WorldSceneState detectionScene(WorldPosition hunter, TacticalGrid grid, WorldGeometry geometry) {
         return new WorldSceneState(new HunterState(hunter, 5, 0.4),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(0, 0), new WorldPosition(0, 1)),
-                2, 0.3, 0.5, 3, geometry), grid, geometry);
+                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry), grid, geometry);
     }
 
     @Test
@@ -231,7 +232,7 @@ class WorldSceneStateTest {
     void constructorCopiesCurrentPatrolPhaseAndAlertState() {
         WorldGeometry geometry = WorldGeometry.empty();
         CreaturePatrolState creature = new CreaturePatrolState(Arrays.asList(
-            new WorldPosition(0, 0), new WorldPosition(1, 0)), 1, 0.05, 0.5, 0.1, geometry);
+            new WorldPosition(0, 0), new WorldPosition(1, 0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 0.1, 0.5), 0.05, geometry);
         creature.advancePatrol(1.75); // Разворот у второго waypoint, половина паузы осталась.
         WorldSceneState scene = scene(new WorldPosition(8, 0), creature, geometry);
         assertEquals(creature.getPosition(), scene.getCreaturePosition());
@@ -283,6 +284,6 @@ class WorldSceneStateTest {
     }
 
     private CreaturePatrolState creature(WorldPosition from, double detection, WorldGeometry geometry) {
-        return new CreaturePatrolState(Arrays.asList(from, from.translate(0.1, 0)), 1, 0.05, 0.5, detection, geometry);
+        return new CreaturePatrolState(Arrays.asList(from, from.translate(0.1, 0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, detection, 0.5), 0.05, geometry);
     }
 }

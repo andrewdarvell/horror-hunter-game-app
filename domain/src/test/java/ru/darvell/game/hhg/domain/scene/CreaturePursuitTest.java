@@ -1,6 +1,7 @@
 package ru.darvell.game.hhg.domain.scene;
 
 import org.junit.jupiter.api.Test;
+import ru.darvell.game.hhg.domain.actor.CreatureBehaviorConfig;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState.Behavior;
 import ru.darvell.game.hhg.domain.actor.HunterState;
@@ -212,7 +213,7 @@ class CreaturePursuitTest {
     }
 
     private static CreaturePatrolState creature(WorldPosition position, WorldPosition endpoint, WorldGeometry geometry) {
-        return new CreaturePatrolState(Arrays.asList(position, endpoint), 2, .3, .5, 3, geometry);
+        return new CreaturePatrolState(Arrays.asList(position, endpoint), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3, geometry);
     }
 
     private static WorldPosition p(double x, double y) { return new WorldPosition(x, y); }

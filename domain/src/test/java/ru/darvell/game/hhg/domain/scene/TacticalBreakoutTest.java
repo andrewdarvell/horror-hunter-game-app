@@ -79,7 +79,7 @@ class TacticalBreakoutTest {
     private WorldSceneState custom(int hx,int hy,int ex,int ey,WorldGeometry g,double size) {
         WorldSceneState s=new WorldSceneState(new HunterState(new WorldPosition((hx+.5)*size,(hy+.5)*size),1,.4*size),
             new CreaturePatrolState(Arrays.asList(new WorldPosition((ex+.5)*size,(ey+.5)*size),
-                new WorldPosition((ex+.5)*size,(ey+1.5)*size)),1,.3*size,.5,3,g),new TacticalGrid(0,0,size),g);
+                new WorldPosition((ex+.5)*size,(ey+1.5)*size)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .3*size,g),new TacticalGrid(0,0,size),g);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS,s.enterTactical()); return s;
     }
 
@@ -155,7 +155,7 @@ class TacticalBreakoutTest {
         s=custom(2,0,0,0,WorldGeometry.empty(),1);
         assertEquals(TacticalExitResult.ACTIVE_THREAT,s.tryExitTactical());
         s= new WorldSceneState(new HunterState(new WorldPosition(1.5,.5),1,.4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)),1,.3,.5,3,WorldGeometry.empty()),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .3,WorldGeometry.empty()),
             new TacticalGrid(0,0,1),WorldGeometry.empty());
         s.update(0,0,0,false); assertTrue(s.isCreatureAlerted());
         run(s,4,0); TacticalAttackResult history=s.getLastResolution(); PrototypeBiteState phase=s.getBiteState();

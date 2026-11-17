@@ -29,7 +29,7 @@ public final class CombatRhythmSmoke extends ApplicationAdapter {
         if (screen != null) screen.dispose();
         WorldGeometry g=WorldGeometry.empty(); TacticalGrid grid=new TacticalGrid(0,0,1);
         scene=new WorldSceneState(new HunterState(new WorldPosition(scenario==0?2.5:1.5,.5),1,.4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)),1,.4,.5,3,g),grid,g);
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .4,g),grid,g);
         viewport=new FitViewport(20,15,new OrthographicCamera());
         screen=new FirstScreen(scene,grid,g,viewport,new ShapeRenderer());
         screen.show(); screen.resize(Gdx.graphics.getWidth(),Gdx.graphics.getHeight());

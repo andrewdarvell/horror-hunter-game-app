@@ -13,7 +13,7 @@ git diff --check
 
 | Проверка | Результат |
 | --- | --- |
-| Domain JUnit | 151 тест, 0 ошибок, 0 отказов, 0 пропусков |
+| Domain JUnit | 155 тестов, 0 ошибок, 0 отказов, 0 пропусков |
 | Core JUnit | 50 тестов, 0 ошибок, 0 отказов, 0 пропусков |
 | Core и desktop compilation | Прошли на JDK 21 с исходным уровнем Java 8 |
 | Android debug | `:android:assembleDebug` прошла с Android SDK 36. APK в `android/build/outputs/apk/debug/android-debug.apk` |
@@ -29,6 +29,12 @@ Core tests проверяют начало перехода из позиций,
 
 ## Desktop и Android
 
-Desktop smoke выполнялся автоматически в GLFW/OpenGL с настоящим `FirstScreen`. Синтетический pointer input проверил вход hunter-only после победы и resize. Просмотрены кадры `lwjgl3/build/pursuit-search.png` и `lwjgl3/build/pursuit-blocked-return.png`, полученные этим smoke. Один активный update demo-сцены на **1,27 с** (127 шагов) занял около **0,48 мс** в повторном запуске. Это единичный замер времени выполнения update, без отрисовки.
+Desktop smoke выполнялся автоматически в GLFW/OpenGL с настоящим `FirstScreen`. Синтетический pointer input проверил вход hunter-only после победы и resize. Просмотрены кадры `lwjgl3/build/pursuit-search.png` и `lwjgl3/build/pursuit-blocked-return.png`, полученные этим smoke. Один активный update demo-сцены на **1,27 с** (127 шагов) занял около **0,50 мс** в повторном прогоне после ревью. Это единичный замер времени выполнения update, без отрисовки.
 
 Ручной playtest не проводился. Touch на Android не проверен. `adb devices -l` не показал устройств, а x86_64 AVD `Medium_Phone` при пробном запуске без доступного `/dev/kvm` завис в QEMU и завершился до подключения к `adb`. Desktop pointer tests и автоматический smoke охватывают общий код обработки ввода в `core`.
+
+## Повторный прогон после ревью PR №33
+
+`CreatureBehaviorConfigTest` сравнивает два существа при одинаковом наблюдении и одинаковых интервалах движения. Скорости CHASE и SEARCH и время поиска различаются. Когда одно существо уже вернулось в RETURN, бюджет SEARCH второго остаётся прежним. Проверены также различные радиусы, паузы, скорость возврата, сохранение конфигурации в копиях и продолжение нестандартного SEARCH после тактического входа и выхода. Отдельные тесты проверяют нулевой бюджет поиска и отказ для невалидных значений.
+
+Повторён полный Gradle-прогон из первого блока. Все domain/core tests, Android debug build и все desktop smoke прошли, включая W/D/C, F1–F8/F6-death и victory exit. Прежнее ограничение проверки Android touch остаётся в силе.

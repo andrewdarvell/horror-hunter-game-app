@@ -12,7 +12,7 @@ class TacticalAttackTest {
     WorldSceneState scene(int damage, int x, int y, WorldGeometry geometry) {
         return new WorldSceneState(new HunterState(new WorldPosition(.5,.5),1,.1).withDamage(damage),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(x+.5,y+.5),new WorldPosition(x+.5,y+1.5)),
-                1,.1,.5,.01,geometry),new TacticalGrid(0,0,1),geometry);
+                new CreatureBehaviorConfig(1, 4, 3, 2, 2, .01, .5), .1,geometry),new TacticalGrid(0,0,1),geometry);
     }
     final CellCoordinates target = new CellCoordinates(1,0);
     @Test void twoAttacksResolveAutomaticallyAndReleaseCell() {
@@ -93,7 +93,7 @@ class TacticalAttackTest {
     @Test void scaledGridAndLargeRadiiStillUseCellAdjacency() {
         TacticalGrid grid = new TacticalGrid(0,0,10);
         WorldSceneState s = new WorldSceneState(new HunterState(new WorldPosition(5,5),1,2),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(15,15),new WorldPosition(15,25)),1,3,.5,.01,WorldGeometry.empty()),grid,WorldGeometry.empty());
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(15,15),new WorldPosition(15,25)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, .01, .5), 3,WorldGeometry.empty()),grid,WorldGeometry.empty());
         s.enterTactical(); assertEquals(HIT,s.tryAttackCreature(new CellCoordinates(1,1)).getOutcome());
         assertEquals(INVALID_TARGET,s.tryAttackCreature(new CellCoordinates(Integer.MIN_VALUE,Integer.MAX_VALUE)).getOutcome());
     }
@@ -113,7 +113,7 @@ class TacticalAttackTest {
     @Test void oppositeIntegerLimitsCannotWrapIntoAdjacentCells() {
         WorldSceneState s = new WorldSceneState(new HunterState(new WorldPosition(Integer.MIN_VALUE+.5,.5),1,.1),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(Integer.MAX_VALUE+.5,.5),
-                new WorldPosition(Integer.MAX_VALUE+.5,1.5)),1,.1,.5,.01,WorldGeometry.empty()),
+                new WorldPosition(Integer.MAX_VALUE+.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, .01, .5), .1,WorldGeometry.empty()),
             new TacticalGrid(0,0,1),WorldGeometry.empty());
         s.enterTactical();
         assertEquals(OUT_OF_RANGE,s.tryAttackCreature(new CellCoordinates(Integer.MAX_VALUE,0)).getOutcome());
@@ -124,7 +124,7 @@ class TacticalAttackTest {
         assertEquals(4,h.getHealth()); assertEquals(2,h.withDamage(2).copy().withTacticalPosition(new WorldPosition(.5,.5)).getHealth());
         assertEquals(4,h.getHealth()); assertEquals(0,h.withDamage(Integer.MAX_VALUE).getHealth());
         assertThrows(IllegalArgumentException.class,()->h.withDamage(-1));
-        CreaturePatrolState c=new CreaturePatrolState(Arrays.asList(new WorldPosition(0,0),new WorldPosition(1,0)),1,.1,.5,1,WorldGeometry.empty());
+        CreaturePatrolState c=new CreaturePatrolState(Arrays.asList(new WorldPosition(0,0),new WorldPosition(1,0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 1, .5), .1,WorldGeometry.empty());
         assertEquals(1,c.withDamage(1).copy().withTacticalPosition(new WorldPosition(.5,.5)).getHealth()); assertEquals(2,c.getHealth());
     }
 }
