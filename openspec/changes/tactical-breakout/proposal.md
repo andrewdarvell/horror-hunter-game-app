@@ -57,6 +57,16 @@
 
 Новый универсальный movement engine, несколько существ в сцене, новые виды/длиннорукие монстры, full AI pursuit, оглушение и отвлечение как новые игровые действия, stamina/AP как полная подсистема, RNG и случайные промахи, `creature-individuality`, новые оружие/ловушки/инвентарь, изменение баланса уже существующего удара и укуса, глобальные часы, сложное radial menu. Дизайн будущих возможностей не равен обязательной реализации в этом PR.
 
+## Capabilities
+
+### New Capabilities
+
+- `tactical-breakout`: отдельный платный манёвр, полный путь круга, фазовый перехват, различимые исходы, read-only preview и mouse/touch подтверждение.
+
+### Modified Capabilities
+
+Нет. Используются существующие контракты `tactical-movement`, `tactical-attack`, `creature-detection` и продолжение режима из `safe-tactical-exit`; смысл обычного шага, атаки и бесплатного выхода не меняется. Новое поведение сосредоточено в delta-spec `tactical-breakout`. Main specs пополняются только после приёмки реализации, включая зависимость от ещё активного `safe-tactical-exit`.
+
 ## Decisions required at planning
 
 1. **Дальность, направление и длительность прорыва:** конкретная модель для текущей сетки и стоимости времени, не смешивающаяся с обычным шагом.
@@ -83,4 +93,4 @@
 
 ## Workflow
 
-Только OpenSpec proposal. После merge — `$openspec-update-change` с design/delta-specs/tasks, отдельное planning review и утверждение чисел/правил, после этого `$openspec-apply-change` в отдельном implementation PR. Sync main specs и archive — только после приёмки.
+Planning подготовлен в [design.md](design.md), [delta-spec](specs/tactical-breakout/spec.md) и [tasks.md](tasks.md). Владелец разрешил подготовку этих документов и planning PR; это **не утверждение** предложенных B1–B5 и не разрешение implementation. Следующий шаг — архитектурное и геймдизайнерское review, явное утверждение чисел/правил, затем отдельный запрос `$openspec-apply-change` и implementation PR. Sync main specs и archive — только после приёмки.
