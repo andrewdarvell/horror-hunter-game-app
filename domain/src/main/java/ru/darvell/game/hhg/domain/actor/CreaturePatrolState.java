@@ -125,18 +125,23 @@ public final class CreaturePatrolState {
         waitRemaining = source.waitRemaining;
     }
 
-    public boolean checkDetection(WorldPosition hunterPosition) {
+    /** Чистая проверка текущего контакта, независимо от истории alerted. */
+    public boolean canDetect(WorldPosition hunterPosition) {
         if (hunterPosition == null || !Double.isFinite(hunterPosition.getX())
             || !Double.isFinite(hunterPosition.getY())) {
             throw new IllegalArgumentException("Hunter position must be present and finite");
         }
         double distance = Math.hypot(hunterPosition.getX() - position.getX(),
             hunterPosition.getY() - position.getY());
-        if (!Double.isFinite(distance)) {
-            throw new IllegalArgumentException("Hunter distance must be finite");
-        }
+        if (!Double.isFinite(distance)) throw new IllegalArgumentException("Hunter distance must be finite");
+        return !isDefeated() && distance <= detectionRadius
+            && geometry.hasLineOfSight(position, hunterPosition);
+    }
+
+    public boolean checkDetection(WorldPosition hunterPosition) {
+        boolean visible = canDetect(hunterPosition);
         boolean previouslyAlerted = alerted;
-        if (distance <= detectionRadius && geometry.hasLineOfSight(position, hunterPosition)) {
+        if (visible) {
             alerted = true;
             lastSeenHunterPosition = hunterPosition;
         }
@@ -148,7 +153,8 @@ public final class CreaturePatrolState {
         if (!Double.isFinite(deltaSeconds) || deltaSeconds < 0.0) {
             throw new IllegalArgumentException("Delta time must be finite and non-negative");
         }
-        if (alerted) return;
+        if (alerted || isDefeated()) return;
+        if (!geometry.isCirclePathValid(position, route.get(targetIndex), radius)) return;
 
         double remaining = deltaSeconds;
         while (remaining > 0.0) {

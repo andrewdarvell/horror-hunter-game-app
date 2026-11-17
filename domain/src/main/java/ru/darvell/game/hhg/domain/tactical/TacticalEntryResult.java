@@ -28,6 +28,14 @@ public final class TacticalEntryResult {
         return new TacticalEntryResult(Outcome.SUCCESS, placement, hunter, creature);
     }
 
+    static TacticalEntryResult hunterOnly(TacticalPlacement placement, WorldPosition hunter) {
+        return new TacticalEntryResult(Outcome.SUCCESS, placement, hunter, null);
+    }
+
+    public java.util.Optional<WorldPosition> creatureCenter() {
+        return java.util.Optional.ofNullable(creatureCenter);
+    }
+
     public Outcome getOutcome() { return outcome; }
     public TacticalPlacement getPlacement() { return placement; }
     public WorldPosition getHunterCenter() { return hunterCenter; }

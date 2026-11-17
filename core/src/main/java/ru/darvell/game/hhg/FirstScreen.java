@@ -11,6 +11,9 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
+import ru.darvell.game.hhg.domain.tactical.TacticalExitResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
@@ -31,6 +34,7 @@ import ru.darvell.game.hhg.domain.tactical.TacticalMoveResult;
 
 /** First screen of the application. Displayed after the application is created. */
 public class FirstScreen implements Screen {
+    private static final int MODE_BUTTON_WIDTH = 220;
     private static final float VIRTUAL_WIDTH = 20.0f;
     private static final float VIRTUAL_HEIGHT = 15.0f;
     private static final double PROTOTYPE_MOVEMENT_SPEED = 5.0;
@@ -50,6 +54,7 @@ public class FirstScreen implements Screen {
     private boolean pointerReady;
     private boolean active;
     private boolean primaryDown;
+    private boolean pointerModeChanged;
     private CellCoordinates selectedTarget;
     private double attackDisplay;
     private boolean attackJustCreated;
@@ -101,9 +106,19 @@ public class FirstScreen implements Screen {
             if (!active || pointer != 0 || button != Input.Buttons.LEFT) return false;
             if (primaryDown) return true;
             primaryDown = true;
-            if (scene.getMode() != SceneMode.TACTICAL || isBusy()) return true;
+            if (isBusy() || pointerModeChanged) return true;
             if (!pointerReady || !insideViewport(x, y)) return true;
-            if (scene.getHunterHealth() == 0) return true;
+            Rectangle modeBounds = modeButtonBounds();
+            int screenY = Gdx.graphics.getHeight() - 1 - y;
+            if (modeBounds != null && x >= modeBounds.x && x < modeBounds.x + modeBounds.width
+                && screenY >= modeBounds.y && screenY < modeBounds.y + modeBounds.height) {
+                SceneMode before = scene.getMode();
+                updateScene(0, 0, 0, true);
+                pointerModeChanged = before != scene.getMode();
+                if (transition != null) transitionJustCreated = true;
+                return true;
+            }
+            if (scene.getMode() != SceneMode.TACTICAL || scene.getHunterHealth() == 0) return true;
             if (inAttackButton(x, y)) {
                 TacticalAttackResult result = scene.tryAttackCreature(selectedTarget);
                 if (result.isAccepted()) {
@@ -212,7 +227,22 @@ public class FirstScreen implements Screen {
         WorldPosition hunterStart = scene.getHunterPosition();
         WorldPosition creatureStart = scene.getCreaturePosition();
         double safeDelta = Double.isFinite(delta) && delta >= 0.0 ? delta : 0.0;
-        TacticalEntryResult.Outcome outcome = scene.update(x, y, safeDelta, manualEntry);
+        TacticalEntryResult.Outcome outcome = null;
+        if (pointerModeChanged) {
+            pointerModeChanged = false;
+        } else if (manualEntry && !isBusy() && previousMode == SceneMode.TACTICAL) {
+            TacticalExitResult exit = scene.tryExitTactical();
+            if (exit == TacticalExitResult.SUCCESS) {
+                selectedTarget = null;
+                message = "";
+                transition = null;
+                transitionJustCreated = false;
+                attackDisplay = 0;
+                attackJustCreated = false;
+            } else message = exitReason(exit);
+        } else {
+            outcome = scene.update(x, y, safeDelta, manualEntry && !isBusy());
+        }
         if (previousMode == SceneMode.EXPLORATION && scene.getMode() == SceneMode.TACTICAL
             && outcome == TacticalEntryResult.Outcome.SUCCESS) {
             transition = new TacticalEntryTransition(hunterStart, creatureStart,
@@ -326,8 +356,21 @@ public class FirstScreen implements Screen {
         }
     }
 
+    Rectangle modeButtonBounds() {
+        int width = viewport.getScreenWidth(), height = viewport.getScreenHeight();
+        if (!pointerReady || width < 48 || height < (selectedTarget == null ? 48 : 108)) return null;
+        return new Rectangle(viewport.getScreenX(), viewport.getScreenY(), Math.min(width, MODE_BUTTON_WIDTH), 48);
+    }
+
+    private String exitReason(TacticalExitResult result) {
+        switch (result) {
+            case ACTIVE_THREAT: return "Рядом угроза";
+            case HUNTER_DEFEATED: return "Охотник повержен";
+            default: return "";
+        }
+    }
+
     private void drawHud() {
-        if (scene.getMode() != SceneMode.TACTICAL) return;
         if (hudBatch == null) {
             hudBatch = new SpriteBatch();
             FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal("fonts/DejaVuSans.ttf"));
@@ -346,6 +389,19 @@ public class FirstScreen implements Screen {
         float top = viewport.getScreenY() + viewport.getScreenHeight() - 4;
         hudBatch.begin();
         float textWidth = Math.max(1, viewport.getScreenWidth() - 8);
+        Rectangle modeBounds = modeButtonBounds();
+        if (modeBounds != null) {
+            boolean tactical = scene.getMode() == SceneMode.TACTICAL;
+            String restriction = tactical ? exitReason(scene.exitTacticalAvailability()) : "";
+            hudFont.setColor(isBusy() || !restriction.isEmpty() ? Color.LIGHT_GRAY : Color.YELLOW);
+            drawModeLine(tactical ? "[ Выйти из тактики · T ]" : "[ Войти в тактику · T ]",
+                modeBounds, 44);
+            if (!restriction.isEmpty()) drawModeLine(restriction, modeBounds, 22);
+        }
+        if (scene.getMode() != SceneMode.TACTICAL) {
+            hudBatch.end();
+            return;
+        }
         if (selectedTarget != null) {
             TacticalAttackResult.Outcome available = scene.attackAvailability(selectedTarget);
             hudFont.setColor(available == TacticalAttackResult.Outcome.HIT ? Color.YELLOW : Color.LIGHT_GRAY);
@@ -365,7 +421,14 @@ public class FirstScreen implements Screen {
         hudBatch.end();
     }
 
+    private void drawModeLine(String text, Rectangle bounds, float offset) {
+        hudFont.draw(hudBatch, text, bounds.x + 4, bounds.y + offset,
+            0, text.length(), bounds.width - 8, 8, false, "...");
+    }
+
     private float drawHudLine(String text, float left, float top, float width) {
+        GlyphLayout layout = new GlyphLayout(hudFont, text, Color.WHITE, width, 8, true);
+        if (top - layout.height < viewport.getScreenY() + 60) return top;
         return top - hudFont.draw(hudBatch, text, left, top, width, 8, true).height - 12;
     }
 

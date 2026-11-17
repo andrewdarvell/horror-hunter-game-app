@@ -3,6 +3,7 @@ package ru.darvell.game.hhg.domain.scene;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
 import ru.darvell.game.hhg.domain.actor.HunterState;
 import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
+import ru.darvell.game.hhg.domain.tactical.TacticalExitResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.Outcome;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.Event;
@@ -27,6 +28,7 @@ public final class WorldSceneState {
     private final TacticalGrid grid;
     private final WorldGeometry geometry;
     private final TacticalEntryPlanner planner = new TacticalEntryPlanner();
+    private boolean contactOnPreviousCheck;
     private SceneMode mode = SceneMode.EXPLORATION;
     private TacticalPlacement placement;
     private long tacticalTimeUnits;
@@ -55,23 +57,29 @@ public final class WorldSceneState {
             return manualEntry ? TacticalEntryResult.Outcome.ALREADY_TACTICAL : null;
         }
         hunter.move(x, y, delta, geometry);
-        boolean firstDetection = creature.checkDetection(hunter.getPosition());
+        boolean contactNow = creature.canDetect(hunter.getPosition());
+        boolean newContact = contactNow && !contactOnPreviousCheck;
+        creature.checkDetection(hunter.getPosition());
+        contactOnPreviousCheck = contactNow;
         TacticalEntryResult.Outcome outcome = null;
-        if (firstDetection || manualEntry) outcome = enterTactical();
+        if (newContact || manualEntry) outcome = enterTactical();
         if (mode == SceneMode.EXPLORATION) creature.advancePatrol(delta);
         return outcome;
     }
 
     public TacticalEntryResult.Outcome enterTactical() {
         if (mode == SceneMode.TACTICAL) return TacticalEntryResult.Outcome.ALREADY_TACTICAL;
-        TacticalEntryResult result = planner.plan(hunter.getPosition(), hunter.getRadius(),
+        TacticalEntryResult result = creature.isDefeated()
+            ? planner.planHunterOnly(hunter.getPosition(), hunter.getRadius(), grid, geometry)
+            : planner.plan(hunter.getPosition(), hunter.getRadius(),
             creature.getPosition(), creature.getRadius(), grid, geometry);
         if (result.getOutcome() == TacticalEntryResult.Outcome.SUCCESS) {
             HunterState preparedHunter = hunter.withTacticalPosition(result.getHunterCenter());
-            CreaturePatrolState preparedCreature = creature.withTacticalPosition(result.getCreatureCenter());
+            CreaturePatrolState preparedCreature = result.creatureCenter()
+                .map(creature::withTacticalPosition).orElse(creature);
             TacticalPlacement preparedPlacement = result.getPlacement();
             PrototypeBiteState preparedBite = preparedCreature.isDefeated() ? null
-                : new PrototypeBiteState(canBite(preparedHunter, preparedCreature, preparedPlacement)
+                : biteState != null ? biteState : new PrototypeBiteState(canBite(preparedHunter, preparedCreature, preparedPlacement)
                     ? Phase.PREPARING : Phase.READY,
                     canBite(preparedHunter, preparedCreature, preparedPlacement) ? 1 : 0);
             // Публикация только после полной подготовки: без вызовов, проверок и callbacks.
@@ -82,6 +90,25 @@ public final class WorldSceneState {
             mode = SceneMode.TACTICAL;
         }
         return result.getOutcome();
+    }
+
+    public TacticalExitResult exitTacticalAvailability() {
+        if (mode != SceneMode.TACTICAL) return TacticalExitResult.NOT_TACTICAL;
+        if (hunter.isDefeated()) return TacticalExitResult.HUNTER_DEFEATED;
+        if (creature.canDetect(hunter.getPosition()) || canBite(hunter, creature, placement)) {
+            return TacticalExitResult.ACTIVE_THREAT;
+        }
+        return TacticalExitResult.SUCCESS;
+    }
+
+    public TacticalExitResult tryExitTactical() {
+        TacticalExitResult result = exitTacticalAvailability();
+        if (result == TacticalExitResult.SUCCESS) {
+            placement = null;
+            contactOnPreviousCheck = false;
+            mode = SceneMode.EXPLORATION;
+        }
+        return result;
     }
 
     /** Проверки и подготовка предшествуют публикации в однопоточной сцене. */
