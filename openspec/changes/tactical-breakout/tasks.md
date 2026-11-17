@@ -1,10 +1,10 @@
 # tactical-breakout: задачи после повторного planning review
 
-**Статус: planning, все задачи ниже не выполнены.** B1–B3 переработаны и не утверждены; B4–B5 предварительно приняты владельцем. Подтверждена запись пересмотра и обновление PR #29, implementation не разрешена. Начинать с раздела 1; OpenSpec status не снимает этот gate. Контракт — в [delta-spec](specs/tactical-breakout/spec.md), пересчитанные F1–F8 — в [design.md](design.md).
+**Статус: planning, B1–B5 утверждены владельцем в последнем рекомендованном варианте прямым указанием в текущей сессии; выполнен пункт 1.1.** Implementation не начата и не разрешена. Остальные задачи, включая финальное архитектурное review, остаются открытыми; для реализации нужен отдельный запрос после planning review/merge PR #29. OpenSpec status не заменяет этот запрос. Контракт — в [delta-spec](specs/tactical-breakout/spec.md), пересчитанные F1–F8 — в [design.md](design.md).
 
 ## 1. Решения владельца и архитектурное review
 
-- [ ] 1.1 Получить явное утверждение B1–B3: любая клетка в Euclidean 2..4, D=1+ceil(L/2), движение на unit1 после старой фазы, продолжение после нелетального укуса, смерть в origin/endpoint, отсутствие реакции на промежуточный контроль. Финализировать предварительно принятые B4–B5 с новым timing; согласовать design/spec/tasks до кода.
+- [x] 1.1 Владелец утвердил B1–B5 в последнем рекомендованном варианте: любая клетка в Euclidean 2..4, D=1+ceil(L/2) и 2–3 units, движение на unit1 после старой фазы укуса, продолжение после нелетального укуса, прерывание при смерти с сохранением достигнутой позиции, отсутствие промежуточных атак, четыре исхода, общий safe-exit/recontact без grace period и mouse/touch endpoint selection с отдельным confirm/точным preview. Утверждение зафиксировано в design, delta-spec и PR; implementation не запрошена.
 - [ ] 1.2 Завершить архитектурное review: Java 8 domain без libGDX, единый result/lastResolution, общий safe-exit predicate, один progression bite cycle, атомарная публикация HP/time/phase/mode/contact. Подтвердить отсутствие нужды в аналитическом path-control helper на основании достижимых сценариев; не вводить его или второй scheduler.
 - [ ] 1.3 Проверить базу и незакрытые review/manual задачи combat-rhythm/safe-tactical-exit; получить отдельный запрос на implementation и создать отдельную ветку/PR. Planning approval и validation не считать реализацией или приёмкой зависимостей.
 
