@@ -65,7 +65,7 @@
 
 ### Modified Capabilities
 
-Нет. Используются существующие контракты `tactical-movement`, `tactical-attack`, `creature-detection` и продолжение режима из `safe-tactical-exit`; смысл обычного шага, атаки и бесплатного выхода не меняется. Новое поведение сосредоточено в delta-spec `tactical-breakout`. Main specs пополняются только после приёмки реализации, включая зависимость от ещё активного `safe-tactical-exit`.
+tactical-attack: по уточнению владельца для PR #30 победный HIT автоматически завершает бой. Используются существующие контракты `tactical-movement`, `tactical-attack`, `creature-detection` и продолжение режима из `safe-tactical-exit`; смысл обычного шага, атаки и бесплатного выхода не меняется. Правила прорыва описаны в delta-spec `tactical-breakout`, автоматический выход после победы — в delta-spec `tactical-attack`. Main specs пополняются только после приёмки реализации, включая зависимость от ещё активного `safe-tactical-exit`.
 
 ## Decisions required at planning
 

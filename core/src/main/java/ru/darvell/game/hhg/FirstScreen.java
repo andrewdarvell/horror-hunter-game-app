@@ -56,6 +56,9 @@ public class FirstScreen implements Screen {
     private boolean primaryDown;
     private boolean pointerModeChanged;
     private CellCoordinates selectedTarget;
+    private boolean breakoutSelecting;
+    private CellCoordinates breakoutTarget;
+    private WorldPosition breakoutStart;
     private double attackDisplay;
     private boolean attackJustCreated;
     private String message = "";
@@ -63,6 +66,11 @@ public class FirstScreen implements Screen {
     private BitmapFont hudFont;
 
     boolean isBusy() { return transition != null || attackDisplay > 0; }
+    boolean isShowingVictory() {
+        TacticalAttackResult result = scene.getLastResolution();
+        return attackDisplay > 0 && result != null && result.getKind() == TacticalAttackResult.Kind.ATTACK
+            && result.getModeAfter() == SceneMode.EXPLORATION && result.isCreatureDefeated();
+    }
     boolean hasSelectedTarget() { return selectedTarget != null; }
 
     private boolean insideViewport(int x, int y) {
@@ -76,6 +84,28 @@ public class FirstScreen implements Screen {
         int top = Gdx.graphics.getHeight() - viewport.getScreenY() - viewport.getScreenHeight();
         return selectedTarget != null && viewport.getScreenWidth() >= 48 && viewport.getScreenHeight() >= 48
             && x >= left && x < left + Math.min(220, viewport.getScreenWidth()) && y >= top && y < top + 48;
+    }
+
+    Rectangle breakoutButtonBounds() { return breakoutBounds(0, true); }
+    Rectangle breakoutCancelBounds() { return breakoutSelecting ? breakoutBounds(54, false) : null; }
+    Rectangle breakoutConfirmBounds() { return breakoutSelecting ? breakoutBounds(54, true) : null; }
+    private Rectangle breakoutBounds(int offset, boolean right) {
+        int width = viewport.getScreenWidth();
+        if (!pointerReady || scene.getMode() != SceneMode.TACTICAL || width < 96
+            || viewport.getScreenHeight() < offset + 48) return null;
+        int half = width / 2;
+        return new Rectangle(viewport.getScreenX() + (right ? half : 0), viewport.getScreenY() + offset,
+            Math.min(220, right ? width - half : half), 48);
+    }
+    private boolean contains(Rectangle r, int x, int y) {
+        int sy = Gdx.graphics.getHeight() - 1 - y;
+        return r != null && x >= r.x && x < r.x+r.width && sy >= r.y && sy < r.y+r.height;
+    }
+    private void clearSelection() { selectedTarget = null; breakoutSelecting = false; breakoutTarget = null; }
+    boolean isBreakoutSelecting() { return breakoutSelecting; }
+    String breakoutPreviewText() {
+        return breakoutTarget == null ? "Выберите конечную клетку · дальность 2–4"
+            : CombatHud.breakout(scene.previewBreakoutTo(breakoutTarget));
     }
 
     private String reason(TacticalAttackResult.Outcome outcome) {
@@ -94,10 +124,11 @@ public class FirstScreen implements Screen {
             if (text.length() > 0) text.append(" → ");
             text.append(CombatHud.event(event.getType()));
         }
-        if (result.getOutcome() == TacticalAttackResult.Outcome.INTERRUPTED) text.append(" · Удар прерван");
+        if (result.getOutcome() == TacticalAttackResult.Outcome.INTERRUPTED) text.append(result.getKind() == TacticalAttackResult.Kind.BREAKOUT ? " · Прорыв прерван" : " · Удар прерван");
         if (result.isCreatureDefeated()) text.append(" · Цель повержена");
         if (result.isHunterDefeated()) text.append(" · Охотник повержен");
-        message = text.toString();
+        message = result.getKind() == TacticalAttackResult.Kind.ATTACK
+            && result.getModeAfter() == SceneMode.EXPLORATION ? "Победа · " + text : text.toString();
     }
     private InputProcessor previousInput;
     private final InputAdapter pointerInput = new InputAdapter() {
@@ -119,6 +150,19 @@ public class FirstScreen implements Screen {
                 return true;
             }
             if (scene.getMode() != SceneMode.TACTICAL || scene.getHunterHealth() == 0) return true;
+            if (contains(breakoutButtonBounds(), x, y)) {
+                selectedTarget = null; breakoutSelecting = !breakoutSelecting; breakoutTarget = null; return true;
+            }
+            if (contains(breakoutCancelBounds(), x, y)) { clearSelection(); return true; }
+            if (contains(breakoutConfirmBounds(), x, y)) {
+                TacticalAttackResult result = scene.tryBreakoutTo(breakoutTarget);
+                if (result.isAccepted()) {
+                    breakoutStart = result.getPositionBefore();
+                    clearSelection(); showResolution(result); attackDisplay = .24; attackJustCreated = true;
+                    selectVisualPositions();
+                } else message = CombatHud.breakout(result);
+                return true;
+            }
             if (inAttackButton(x, y)) {
                 TacticalAttackResult result = scene.tryAttackCreature(selectedTarget);
                 if (result.isAccepted()) {
@@ -132,6 +176,7 @@ public class FirstScreen implements Screen {
             CellCoordinates target = TacticalCellPicker.pick(viewport, tacticalGrid, x, y,
                 Gdx.graphics.getWidth(), Gdx.graphics.getHeight(), pointerReady);
             if (target == null) return true;
+            if (breakoutSelecting) { breakoutTarget = target; return true; }
             if (scene.getPlacement().creatureCell().filter(target::equals).isPresent()) {
                 selectedTarget = target.equals(selectedTarget) ? null : target;
                 return true;
@@ -217,7 +262,7 @@ public class FirstScreen implements Screen {
         updateDebugControls();
         viewport.apply();
         followHunter();
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) && !isBusy()) selectedTarget = null;
+        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) && !isBusy()) clearSelection();
         drawScene();
         drawHud();
     }
@@ -233,18 +278,19 @@ public class FirstScreen implements Screen {
         } else if (manualEntry && !isBusy() && previousMode == SceneMode.TACTICAL) {
             TacticalExitResult exit = scene.tryExitTactical();
             if (exit == TacticalExitResult.SUCCESS) {
-                selectedTarget = null;
+                clearSelection();
                 message = "";
                 transition = null;
                 transitionJustCreated = false;
                 attackDisplay = 0;
                 attackJustCreated = false;
             } else message = exitReason(exit);
-        } else {
-            outcome = scene.update(x, y, safeDelta, manualEntry && !isBusy());
+        } else if (!isBusy()) {
+            outcome = scene.update(x, y, safeDelta, manualEntry);
         }
         if (previousMode == SceneMode.EXPLORATION && scene.getMode() == SceneMode.TACTICAL
             && outcome == TacticalEntryResult.Outcome.SUCCESS) {
+            message = "";
             transition = new TacticalEntryTransition(hunterStart, creatureStart,
                 scene.getHunterPosition(), scene.getCreaturePosition());
             transitionJustCreated = true;
@@ -266,6 +312,13 @@ public class FirstScreen implements Screen {
     private void selectVisualPositions() {
         visualHunterPosition = transition == null
             ? scene.getHunterPosition() : transition.getHunterPosition();
+        if (breakoutStart != null) {
+            if (attackDisplay > 0 && !breakoutStart.equals(scene.getHunterPosition())) {
+                double u = 1 - attackDisplay / .24;
+                visualHunterPosition = new WorldPosition(breakoutStart.getX() + u * (scene.getHunterPosition().getX()-breakoutStart.getX()),
+                    breakoutStart.getY() + u * (scene.getHunterPosition().getY()-breakoutStart.getY()));
+            } else if (attackDisplay == 0) breakoutStart = null;
+        }
         visualCreaturePosition = transition == null
             ? scene.getCreaturePosition() : transition.getCreaturePosition();
     }
@@ -305,7 +358,7 @@ public class FirstScreen implements Screen {
     private void drawScene() {
         ScreenUtils.clear(0.10f, 0.16f, 0.12f, 1.0f);
         shapeRenderer.setProjectionMatrix(camera.combined);
-        if (debugGridVisible || scene.getMode() == SceneMode.TACTICAL) {
+        if (debugGridVisible || scene.getMode() == SceneMode.TACTICAL || isShowingVictory()) {
             drawDebugGrid();
         }
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -335,6 +388,12 @@ public class FirstScreen implements Screen {
             (float) scene.getCreatureRadius(),
             32
         );
+        if (isShowingVictory()) {
+            shapeRenderer.setColor(Color.GOLD);
+            float x = (float) creaturePosition.getX(), y = (float) creaturePosition.getY();
+            float radius = (float) scene.getCreatureRadius();
+            shapeRenderer.rectLine(x - radius, y - radius, x + radius, y + radius, .05f);
+        }
         WorldPosition lastSeen = scene.getLastSeenHunterPosition();
         if (lastSeen != null && scene.getCreatureHealth() > 0) {
             double dx = lastSeen.getX() - creaturePosition.getX();
@@ -348,6 +407,30 @@ public class FirstScreen implements Screen {
             }
         }
         shapeRenderer.end();
+        if (breakoutSelecting && scene.getPlacement() != null) {
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+            CellCoordinates origin = scene.getPlacement().getHunterCell();
+            for (int dx=-4; dx<=4; dx++) for (int dy=-4; dy<=4; dy++) {
+                int q=dx*dx+dy*dy;
+                long cx=(long)origin.getX()+dx, cy=(long)origin.getY()+dy;
+                if(q>=4 && q<=16 && cx>=Integer.MIN_VALUE && cx<=Integer.MAX_VALUE && cy>=Integer.MIN_VALUE && cy<=Integer.MAX_VALUE)
+                    drawOccupiedCell(new CellCoordinates((int)cx,(int)cy),Color.OLIVE);
+            }
+            if(breakoutTarget != null) {
+                TacticalAttackResult r=scene.previewBreakoutTo(breakoutTarget);
+                Color color=r.isAccepted()?Color.YELLOW:Color.RED;
+                drawOccupiedCell(breakoutTarget,color);
+                WorldPosition a=scene.getHunterPosition(), b=tacticalGrid.cellToWorldCenter(breakoutTarget);
+                shapeRenderer.setColor(color); shapeRenderer.line((float)a.getX(),(float)a.getY(),(float)b.getX(),(float)b.getY());
+                for(StaticAabb obstacle:worldGeometry.getObstacles()) {
+                    WorldGeometry one=new WorldGeometry(java.util.Collections.singletonList(obstacle));
+                    if(!one.isCirclePathValid(a,b,scene.getHunterRadius())) {
+                        shapeRenderer.setColor(Color.RED); shapeRenderer.rect((float)obstacle.getX(),(float)obstacle.getY(),(float)obstacle.getWidth(),(float)obstacle.getHeight());
+                    }
+                }
+            }
+            shapeRenderer.end();
+        }
         if (scene.getPlacement() != null) {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
             drawOccupiedCell(scene.getPlacement().getHunterCell(), Color.GOLDENROD);
@@ -358,8 +441,8 @@ public class FirstScreen implements Screen {
 
     Rectangle modeButtonBounds() {
         int width = viewport.getScreenWidth(), height = viewport.getScreenHeight();
-        if (!pointerReady || width < 48 || height < (selectedTarget == null ? 48 : 108)) return null;
-        return new Rectangle(viewport.getScreenX(), viewport.getScreenY(), Math.min(width, MODE_BUTTON_WIDTH), 48);
+        if (isShowingVictory() || !pointerReady || width < 48 || height < (selectedTarget == null ? 48 : 108)) return null;
+        return new Rectangle(viewport.getScreenX(), viewport.getScreenY(), Math.min(width, scene.getMode() == SceneMode.TACTICAL && width >= 96 ? Math.min(MODE_BUTTON_WIDTH, width / 2) : MODE_BUTTON_WIDTH), 48);
     }
 
     private String exitReason(TacticalExitResult result) {
@@ -378,7 +461,7 @@ public class FirstScreen implements Screen {
                 FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
                 parameter.size = 16;
                 parameter.characters = FreeTypeFontGenerator.DEFAULT_CHARS
-                    + "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя→−·";
+                    + "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя→−·–";
                 hudFont = generator.generateFont(parameter);
             } finally { generator.dispose(); }
         }
@@ -399,8 +482,31 @@ public class FirstScreen implements Screen {
             if (!restriction.isEmpty()) drawModeLine(restriction, modeBounds, 22);
         }
         if (scene.getMode() != SceneMode.TACTICAL) {
+            hudFont.setColor(Color.WHITE);
+            drawHudLine(message, left, top, textWidth);
             hudBatch.end();
             return;
+        }
+        Rectangle breakoutBounds=breakoutButtonBounds();
+        if(breakoutBounds!=null) {
+            hudFont.setColor(isBusy()?Color.LIGHT_GRAY:Color.YELLOW);
+            drawModeLine("[ Прорыв · 2–3 ед. ]",breakoutBounds,32);
+        }
+        if(breakoutSelecting) {
+            Rectangle cancel=breakoutCancelBounds(), confirm=breakoutConfirmBounds();
+            if(cancel!=null) drawModeLine("[ Отмена ]",cancel,32);
+            boolean allowed=breakoutTarget!=null && scene.previewBreakoutTo(breakoutTarget).isAccepted();
+            hudFont.setColor(allowed?Color.YELLOW:Color.LIGHT_GRAY);
+            if(confirm!=null) drawModeLine("[ Подтвердить прорыв ]",confirm,32);
+            hudFont.setColor(Color.WHITE);
+            float available = Math.max(16, top - viewport.getScreenY() - 114);
+            String preview = breakoutPreviewText();
+            float scale = 1;
+            while (scale > .4f && new GlyphLayout(hudFont, preview, Color.WHITE, textWidth, 8, true).height > available) {
+                scale -= .1f; hudFont.getData().setScale(scale);
+            }
+            top -= hudFont.draw(hudBatch, preview, left, top, textWidth, 8, true).height + 12;
+            hudFont.getData().setScale(1);
         }
         if (selectedTarget != null) {
             TacticalAttackResult.Outcome available = scene.attackAvailability(selectedTarget);
@@ -428,7 +534,7 @@ public class FirstScreen implements Screen {
 
     private float drawHudLine(String text, float left, float top, float width) {
         GlyphLayout layout = new GlyphLayout(hudFont, text, Color.WHITE, width, 8, true);
-        if (top - layout.height < viewport.getScreenY() + 60) return top;
+        if (top - layout.height < viewport.getScreenY() + (breakoutSelecting ? 114 : 60)) return top;
         return top - hudFont.draw(hudBatch, text, left, top, width, 8, true).height - 12;
     }
 
@@ -495,6 +601,7 @@ public class FirstScreen implements Screen {
 
     @Override
     public void resize(int width, int height) {
+        clearSelection();
         pointerReady = width > 0 && height > 0;
         if (!pointerReady) return;
         viewport.update(width, height, false);
@@ -503,7 +610,7 @@ public class FirstScreen implements Screen {
 
     @Override
     public void pause() {
-        selectedTarget = null;
+        clearSelection();
         primaryDown = false;
     }
 
@@ -517,7 +624,7 @@ public class FirstScreen implements Screen {
         if (active && Gdx.input.getInputProcessor() == pointerInput) {
             Gdx.input.setInputProcessor(previousInput);
         }
-        selectedTarget = null;
+        clearSelection();
         active = false;
         primaryDown = false;
         previousInput = null;

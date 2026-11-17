@@ -52,8 +52,9 @@ class CombatRhythmTest {
             move(s,2,0); move(s,1,0); TacticalAttackResult last=attack(s);
             assertEquals(4,s.getHunterHealth()); assertEquals(0,s.getCreatureHealth());
             assertEquals(start==2?9:8,s.getTacticalTimeUnits()); assertNull(s.getBiteState());
-            assertFalse(s.getPlacement().creatureCell().isPresent());
-            assertEquals(Arrays.asList("2:HIT"),events(last));
+            assertNull(s.getPlacement());
+            assertEquals(SceneMode.EXPLORATION,s.getMode());
+            assertEquals(Arrays.asList("2:HIT","2:TACTICAL_EXITED"),events(last));
         }
     }
     static WorldSceneState mistakes() {
@@ -83,7 +84,7 @@ class CombatRhythmTest {
         assertEquals(2,s.getHunterHealth()); assertEquals(1,s.getCreatureHealth());
         // Достижимое R1 с целью 1 HP: первый удар, затем соседний шаг.
         s=scene(1,0); attack(s); move(s,1,1); phase(s,RECOVERING,1);
-        r=attack(s); assertEquals(Arrays.asList("1:RECOVERY_ENDED","1:PREPARATION_STARTED","2:HIT"),events(r));
+        r=attack(s); assertEquals(Arrays.asList("1:RECOVERY_ENDED","1:PREPARATION_STARTED","2:HIT","2:TACTICAL_EXITED"),events(r));
     }
     @Test void HitRemainsCompletedWhenSameBoundaryBiteKillsHunter() {
         WorldSceneState s=scene(1,2); move(s,1,1); move(s,1,0); move(s,1,1);

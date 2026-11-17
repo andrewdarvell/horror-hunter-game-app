@@ -53,7 +53,8 @@ class TacticalExitTest {
         s.tryAttackCreature(new CellCoordinates(0,0));s.tryAttackCreature(new CellCoordinates(0,0));
         assertEquals(0,s.getCreatureHealth()); Object history=s.getLastResolution();
         WorldPosition body=s.getCreaturePosition();long time=s.getTacticalTimeUnits();
-        assertEquals(TacticalExitResult.SUCCESS,s.tryExitTactical());s.update(0,0,100,false);
+        assertEquals(SceneMode.EXPLORATION,s.getMode());
+        assertEquals(TacticalExitResult.NOT_TACTICAL,s.tryExitTactical());s.update(0,0,100,false);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS,s.enterTactical());
         assertFalse(s.getPlacement().creatureCell().isPresent());assertSame(body,s.getCreaturePosition());
         assertSame(history,s.getLastResolution()); assertEquals(time,s.getTacticalTimeUnits());assertNull(s.getBiteState());

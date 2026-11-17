@@ -228,3 +228,10 @@ tasks.register('combatRhythmSmoke', JavaExec) {
   mainClass = 'ru.darvell.game.hhg.CombatRhythmSmoke'
   workingDir = rootProject.file('assets')
 }
+
+tasks.register('tacticalBreakoutSmoke', JavaExec) {
+  dependsOn compileCombatRhythmSmoke
+  classpath = sourceSets.main.runtimeClasspath + files(layout.buildDirectory.dir('classes/smoke'))
+  mainClass = 'ru.darvell.game.hhg.TacticalBreakoutSmoke'
+  workingDir = rootProject.file('assets')
+}

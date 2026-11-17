@@ -26,8 +26,32 @@ final class CombatHud {
             : "Ожидается укус: −" + preview.getHunterDamage() + " HP"
                 + (preview.isHunterDefeated() ? " · охотник погибнет после удара" : "");
     }
+    static String breakout(TacticalAttackResult r) {
+        if(!r.isAccepted()) return "Невозможно: " + rejection(r.getRejectionReason()) + " · 0 ед.";
+        String cost="Цена: " + r.getPlannedDuration() + " ед. · прошло: " + r.getDuration() + " ед. ";
+        if(r.isHunterDefeated()) return cost + "Смертельный укус · "
+            + (r.getPositionBefore().equals(r.getPositionAfter()) ? "перемещения не будет" : "смерть в конечной клетке");
+        return cost + (r.getOutcome()==TacticalAttackResult.Outcome.ESCAPED ? "Ожидается выход" : "Угроза остаётся · tactical")
+            + (r.getHunterDamage()>0 ? " · −"+r.getHunterDamage()+" HP" : " · без урона");
+    }
+    private static String rejection(TacticalAttackResult.RejectionReason r) {
+        if(r==null) return "выберите цель";
+        switch(r) {
+            case INVALID_DISTANCE: return "дальность 2–4 клетки";
+            case BLOCKED_PATH: return "путь перекрыт (радиус/угол)";
+            case BLOCKED_START: return "исходная позиция заблокирована";
+            case BLOCKED_CENTER: return "конечная позиция заблокирована";
+            case OCCUPIED_PATH: return "путь занят существом";
+            case HUNTER_DEFEATED: return "охотник повержен";
+            case NOT_TACTICAL: return "нужен tactical";
+            default: return "некорректная цель";
+        }
+    }
     static String event(TacticalAttackResult.EventType type) {
         switch (type) {
+            case BREAKOUT_MOVED: return "Прорыв: перемещение";
+            case BREAKOUT_INTERRUPTED: return "Прорыв прерван";
+            case TACTICAL_EXITED: return "Выход из тактики";
             case HIT: return "Удар −1";
             case BITE: return "Укус −1";
             case BITE_MISS: return "Промах укуса";

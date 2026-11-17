@@ -27,6 +27,13 @@ class CombatHudTest extends TacticalPointerTest {
         assertTrue(CombatHud.phase(scene).contains("2 ед."));
         bounds(480,800); assertSame(state,scene.getBiteState()); s.hide();
     }
+    @Test void breakoutExplainsWoundDeathAndRejection() {
+        String wounded=CombatHud.breakout(combat(0).previewBreakoutTo(new CellCoordinates(-3,0)));
+        assertTrue(wounded.contains("выход")); assertTrue(wounded.contains("−1 HP")); assertTrue(wounded.contains("3 ед."));
+        String dead=CombatHud.breakout(combat(3).previewBreakoutTo(new CellCoordinates(-3,0)));
+        assertTrue(dead.contains("Смертельный")); assertTrue(dead.contains("перемещения не будет"));
+        assertTrue(CombatHud.breakout(combat(0).previewBreakoutTo(new CellCoordinates(0,1))).contains("Невозможно"));
+    }
     @Test void riskUsesEntireAttackAndEveryEventHasDistinctText() {
         WorldSceneState scene=combat(3);
         assertTrue(CombatHud.risk(scene.previewAttackCreature(new CellCoordinates(1,0))).contains("прерван"));
@@ -40,6 +47,6 @@ class CombatHudTest extends TacticalPointerTest {
         assertEquals(1,scene.getBiteState().getRemainingUnits());
         // Цель уже имеет 1 HP, поэтому HIT отменит совпавший укус.
         assertEquals("Без укуса за этот удар",CombatHud.risk(scene.previewAttackCreature(new CellCoordinates(1,0))));
-        assertEquals(6,Arrays.stream(TacticalAttackResult.EventType.values()).map(CombatHud::event).distinct().count());
+        assertEquals(TacticalAttackResult.EventType.values().length,Arrays.stream(TacticalAttackResult.EventType.values()).map(CombatHud::event).distinct().count());
     }
 }
