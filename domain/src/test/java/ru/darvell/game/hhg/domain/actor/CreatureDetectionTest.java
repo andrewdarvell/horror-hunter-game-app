@@ -134,7 +134,7 @@ class CreatureDetectionTest {
         WorldGeometry geometry = new WorldGeometry(Arrays.asList(new StaticAabb(3, -3, 1, 6),
             new StaticAabb(-5, 2, 4, 1), new StaticAabb(-3, -4, 2, 2)));
         CreaturePatrolState creature = new CreaturePatrolState(Arrays.asList(p(5, 0), p(5, 1)),
-            2, 0.3, 0.5, 3, geometry);
+            new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry);
         creature.update(0, p(0, 0));
         assertFalse(creature.isAlerted());
         for (int i = 0; i < 100; i++) {
@@ -149,8 +149,7 @@ class CreatureDetectionTest {
     }
 
     private static CreaturePatrolState creature(WorldGeometry geometry, double detectionRadius) {
-        return new CreaturePatrolState(Arrays.asList(p(0, 0), p(0, 2)), 2, 0.3, 0.5,
-            detectionRadius, geometry);
+        return new CreaturePatrolState(Arrays.asList(p(0, 0), p(0, 2)), new CreatureBehaviorConfig(2, 4, 3, 2, 2, detectionRadius, 0.5), 0.3, geometry);
     }
 
     private static WorldPosition p(double x, double y) {

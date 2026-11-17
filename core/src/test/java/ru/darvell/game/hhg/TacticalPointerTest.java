@@ -84,7 +84,7 @@ class TacticalPointerTest {
     WorldSceneState scene() {
         return new WorldSceneState(new HunterState(new WorldPosition(.5,.5),1,.4),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(5.5,.5),new WorldPosition(5.5,1.5)),
-                2,.3,.5,3,WorldGeometry.empty()),grid,WorldGeometry.empty());
+                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3,WorldGeometry.empty()),grid,WorldGeometry.empty());
     }
     int[] target(int x, int y) {
         Vector3 v = viewport.project(new Vector3(x+.5f,y+.5f,0));
@@ -117,6 +117,30 @@ class TacticalPointerTest {
         Object after=scene.getPlacement(); tick(s,100); assertSame(after,scene.getPlacement());
         s.hide(); assertNull(handler);
     }
+    @Test
+    void pursuitHudDoesNotConsumeMapCellNearTop() {
+        WorldPosition hunter = new WorldPosition(.5, 5.5);
+        WorldPosition creature = new WorldPosition(5.5, .5);
+        WorldGeometry geometry = WorldGeometry.empty();
+        WorldSceneState scene = new WorldSceneState(new HunterState(hunter, 1, .4),
+            new CreaturePatrolState(Arrays.asList(creature, creature.translate(0, 1)), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3, geometry),
+            grid, geometry);
+        FirstScreen screen = screen(scene);
+        screen.show();
+        ready(screen);
+        assertEquals("Патрулирует", screen.creatureBehaviorText());
+        down(0, 6);
+        up();
+        assertEquals(SceneMode.EXPLORATION, scene.getMode());
+        scene.enterTactical();
+        viewport.getCamera().position.set(.5f, -.5f, 0);
+        viewport.getCamera().update();
+        down(0, 6);
+        up();
+        assertEquals(new CellCoordinates(0, 6), scene.getPlacement().getHunterCell());
+        screen.hide();
+    }
+
     @Test void fieldsSecondaryButtonsLifecycleAndResizeReadiness() {
         WorldSceneState scene=scene(); scene.enterTactical(); FirstScreen s=screen(scene);
         InputProcessor previous=new InputAdapter(); handler=previous; s.show(); ready(s);

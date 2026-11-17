@@ -13,7 +13,7 @@ class TacticalMovementTest {
                                   CellCoordinates start, CellCoordinates creature) {
         WorldPosition cp = grid.cellToWorldCenter(creature);
         WorldSceneState s = new WorldSceneState(new HunterState(grid.cellToWorldCenter(start), 1, radius),
-            new CreaturePatrolState(Arrays.asList(cp, cp.translate(0, grid.getCellSize())), 2, 0.3, 0.5, 3, geometry), grid, geometry);
+            new CreaturePatrolState(Arrays.asList(cp, cp.translate(0, grid.getCellSize())), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry), grid, geometry);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS, s.enterTactical());
         return s;
     }
@@ -65,7 +65,7 @@ class TacticalMovementTest {
     @Test void explorationRejectsEvenNull() {
         WorldGeometry g = WorldGeometry.empty();
         WorldSceneState s = new WorldSceneState(new HunterState(new WorldPosition(0, 0), 1, .4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(5, 0), new WorldPosition(5, 1)), 1, .3, .5, 3, g),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(5, 0), new WorldPosition(5, 1)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .3, g),
             new TacticalGrid(0, 0, 1), g);
         rejected(s, null, NOT_TACTICAL); rejected(s, c(1, 0), NOT_TACTICAL);
     }
@@ -102,7 +102,7 @@ class TacticalMovementTest {
         WorldGeometry g = WorldGeometry.empty();
         WorldSceneState s = new WorldSceneState(new HunterState(new WorldPosition(.5, .5), 1, .4),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(2.5, .5), new WorldPosition(2.5, 1.5)),
-                2, .3, .5, 3, g), new TacticalGrid(0, 0, 1), g);
+                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3, g), new TacticalGrid(0, 0, 1), g);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS, s.update(0, 0, 0, false));
         assertTrue(s.isCreatureAlerted());
         WorldPosition seen = s.getLastSeenHunterPosition(), creature = s.getCreaturePosition();

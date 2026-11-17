@@ -133,35 +133,83 @@ public final class WorldGeometry {
         return Math.abs(relativeX * unitY - relativeY * unitX);
     }
 
+    /** Полный путь с учётом одного неподвижного живого тела. */
+    public boolean isCirclePathValid(WorldPosition from, WorldPosition to, double radius,
+                                     WorldPosition body, double bodyRadius) {
+        if (!isCirclePathValid(from, to, radius)) return false;
+        if (body == null) return true;
+
+        double dx = to.getX() - from.getX();
+        double dy = to.getY() - from.getY();
+        double length = Math.hypot(dx, dy);
+        if (length == 0.0) return true;
+        double relativeX = body.getX() - from.getX();
+        double relativeY = body.getY() - from.getY();
+        double combinedRadius = radius + bodyRadius;
+        if (Math.hypot(relativeX, relativeY) < combinedRadius) {
+            // При исходном пересечении разрешено только движение от тела.
+            return relativeX * dx + relativeY * dy <= 0.0;
+        }
+        return pointSegmentDistance(body.getX(), body.getY(), from, dx, dy, length)
+            >= combinedRadius;
+    }
+
+    /** Возвращает конец безопасной части прямого отрезка, без скольжения. */
+    public WorldPosition resolveStraightMovement(WorldPosition from, WorldPosition to, double radius,
+                                                  WorldPosition body, double bodyRadius) {
+        if (isCirclePathValid(from, to, radius, body, bodyRadius)) return to;
+        double dx = to.getX() - from.getX();
+        double dy = to.getY() - from.getY();
+        WorldPosition safe = from;
+        double low = 0.0;
+        double high = 1.0;
+        for (int i = 0; i < 40; i++) {
+            double fraction = (low + high) * 0.5;
+            WorldPosition candidate = from.translate(dx * fraction, dy * fraction);
+            if (isCirclePathValid(from, candidate, radius, body, bodyRadius)) {
+                low = fraction;
+                safe = candidate;
+            } else {
+                high = fraction;
+            }
+        }
+        return safe;
+    }
+
     public WorldPosition resolveMovement(
         WorldPosition currentPosition,
         double radius,
         double desiredX,
         double desiredY
     ) {
+        return resolveMovement(currentPosition, radius, desiredX, desiredY, null, 0.0);
+    }
+
+    public WorldPosition resolveMovement(WorldPosition currentPosition, double radius,
+                                         double desiredX, double desiredY, WorldPosition body, double bodyRadius) {
         if (!Double.isFinite(desiredX) || !Double.isFinite(desiredY)) {
             throw new IllegalArgumentException("Desired movement must be finite");
         }
 
         WorldPosition resolvedPosition = currentPosition;
         WorldPosition xCandidate = resolvedPosition.translate(desiredX, 0.0);
-        if (isCirclePositionValid(xCandidate, radius)) {
+        if (isCirclePathValid(resolvedPosition, xCandidate, radius, body, bodyRadius)) {
             resolvedPosition = xCandidate;
         }
 
         WorldPosition yCandidate = resolvedPosition.translate(0.0, desiredY);
-        if (isCirclePositionValid(yCandidate, radius)) {
+        if (isCirclePathValid(resolvedPosition, yCandidate, radius, body, bodyRadius)) {
             resolvedPosition = yCandidate;
         }
         if (desiredX != 0.0 && desiredY != 0.0 && resolvedPosition.equals(currentPosition)) {
-            return resolveCornerSlide(currentPosition, radius, desiredX, desiredY);
+            return resolveCornerSlide(currentPosition, radius, desiredX, desiredY, body, bodyRadius);
         }
         return resolvedPosition;
     }
 
     /** Сохраняет касательную составляющую, которую обе мировые оси могли заблокировать. */
     private WorldPosition resolveCornerSlide(
-        WorldPosition position, double radius, double desiredX, double desiredY
+        WorldPosition position, double radius, double desiredX, double desiredY, WorldPosition body, double bodyRadius
     ) {
         WorldPosition bestPosition = position;
         double bestProgress = 0.0;
@@ -190,7 +238,7 @@ public final class WorldGeometry {
             double slideY = normalX * tangentDistance;
             double progress = slideX * desiredX + slideY * desiredY;
             WorldPosition candidate = position.translate(slideX, slideY);
-            if (progress > bestProgress && isCirclePositionValid(candidate, radius)) {
+            if (progress > bestProgress && isCirclePathValid(position, candidate, radius, body, bodyRadius)) {
                 bestPosition = candidate;
                 bestProgress = progress;
             }

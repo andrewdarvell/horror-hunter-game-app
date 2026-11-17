@@ -1,6 +1,7 @@
 package ru.darvell.game.hhg.domain.scene;
 
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
+import ru.darvell.game.hhg.domain.actor.CreaturePatrolState.Behavior;
 import ru.darvell.game.hhg.domain.actor.HunterState;
 import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
 import ru.darvell.game.hhg.domain.tactical.TacticalExitResult;
@@ -25,12 +26,21 @@ import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 /** Владеет независимыми копиями участников; наружу выдаёт только значения состояния. */
 public final class WorldSceneState {
+    private static final double EXPLORATION_STEP_SECONDS = 0.01;
+    private static final double STEP_ROUNDING_SECONDS = 1e-12;
+
     private HunterState hunter;
     private CreaturePatrolState creature;
     private final TacticalGrid grid;
     private final WorldGeometry geometry;
     private final TacticalEntryPlanner planner = new TacticalEntryPlanner();
     private boolean contactOnPreviousCheck;
+    private boolean initialContactChecked;
+    private double explorationRemainder;
+    private double pendingDirectionX;
+    private double pendingDirectionY;
+    private WorldPosition hunterBeforeEntry;
+    private WorldPosition creatureBeforeEntry;
     private SceneMode mode = SceneMode.EXPLORATION;
     private TacticalPlacement placement;
     private long tacticalTimeUnits;
@@ -58,15 +68,64 @@ public final class WorldSceneState {
         if (mode == SceneMode.TACTICAL) {
             return manualEntry ? TacticalEntryResult.Outcome.ALREADY_TACTICAL : null;
         }
-        hunter.move(x, y, delta, geometry);
-        boolean contactNow = creature.canDetect(hunter.getPosition());
-        boolean newContact = contactNow && !contactOnPreviousCheck;
-        creature.checkDetection(hunter.getPosition());
-        contactOnPreviousCheck = contactNow;
+        double total = explorationRemainder + delta;
+        double stepCount = (total + STEP_ROUNDING_SECONDS) / EXPLORATION_STEP_SECONDS;
+        if (stepCount >= Long.MAX_VALUE) {
+            throw new IllegalArgumentException("Exploration interval has too many steps");
+        }
+        // Учитываем округление на границе шага, включая суммирование частей из разных кадров.
+        long steps = delta == 0.0 ? 0 : (long) stepCount;
+
         TacticalEntryResult.Outcome outcome = null;
-        if (newContact || manualEntry) outcome = enterTactical();
-        if (mode == SceneMode.EXPLORATION) creature.advancePatrol(delta);
+        if (!initialContactChecked) {
+            initialContactChecked = true;
+            if (observeContact()) {
+                outcome = enterTactical();
+                manualEntry = false;
+                if (mode == SceneMode.TACTICAL) return outcome;
+            }
+        }
+
+        for (long i = 0; i < steps; i++) {
+            boolean pending = i == 0 && explorationRemainder > 0.0;
+            hunter.move(pending ? pendingDirectionX : x, pending ? pendingDirectionY : y,
+                EXPLORATION_STEP_SECONDS, geometry, creature.isDefeated() ? null : creature.getPosition(),
+                creature.getRadius());
+
+            if (observeContact() || manualEntry) {
+                outcome = enterTactical();
+                manualEntry = false;
+                if (mode == SceneMode.TACTICAL) return outcome;
+            }
+
+            creature.advanceExploration(EXPLORATION_STEP_SECONDS,
+                hunter.isDefeated() ? null : hunter.getPosition(), hunter.getRadius());
+            if (observeContact()) {
+                outcome = enterTactical();
+                if (mode == SceneMode.TACTICAL) return outcome;
+            }
+            creature.finishExplorationStep();
+        }
+        if (manualEntry) {
+            outcome = enterTactical();
+            if (mode == SceneMode.TACTICAL) return outcome;
+        }
+        if (delta > 0.0) {
+            if (steps > 0 || explorationRemainder == 0.0) {
+                pendingDirectionX = x;
+                pendingDirectionY = y;
+            }
+            double remainder = total - steps * EXPLORATION_STEP_SECONDS;
+            explorationRemainder = steps > 0 && remainder <= STEP_ROUNDING_SECONDS ? 0.0 : remainder;
+        }
         return outcome;
+    }
+
+    private boolean observeContact() {
+        boolean contact = creature.observeHunter(hunter.getPosition());
+        boolean newContact = contact && !contactOnPreviousCheck;
+        contactOnPreviousCheck = contact;
+        return newContact;
     }
 
     public TacticalEntryResult.Outcome enterTactical() {
@@ -85,6 +144,10 @@ public final class WorldSceneState {
                     ? Phase.PREPARING : Phase.READY,
                     canBite(preparedHunter, preparedCreature, preparedPlacement) ? 1 : 0);
             // Публикация только после полной подготовки: без вызовов, проверок и callbacks.
+            hunterBeforeEntry = hunter.getPosition();
+            creatureBeforeEntry = creature.getPosition();
+            explorationRemainder = 0.0;
+            initialContactChecked = true;
             hunter = preparedHunter;
             creature = preparedCreature;
             placement = preparedPlacement;
@@ -334,6 +397,11 @@ public final class WorldSceneState {
     public WorldPosition getCreaturePosition() { return creature.getPosition(); }
     public double getHunterRadius() { return hunter.getRadius(); }
     public double getCreatureRadius() { return creature.getRadius(); }
+    public WorldPosition getHunterBeforeEntry() { return hunterBeforeEntry; }
+    public WorldPosition getCreatureBeforeEntry() { return creatureBeforeEntry; }
+    public Behavior getCreatureBehavior() { return creature.getBehavior(); }
+    public double getCreatureSearchRemaining() { return creature.getSearchRemaining(); }
+    public boolean isCreatureReturnBlocked() { return creature.isReturnBlocked(); }
     public boolean isCreatureAlerted() { return creature.isAlerted(); }
     public WorldPosition getLastSeenHunterPosition() { return creature.getLastSeenHunterPosition(); }
 }

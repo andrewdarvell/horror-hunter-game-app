@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CreatureExitLifecycleTest {
     CreaturePatrolState creature(WorldGeometry g) {
-        return new CreaturePatrolState(Arrays.asList(new WorldPosition(0,0),new WorldPosition(2,0)),1,.1,.5,3,g);
+        return new CreaturePatrolState(Arrays.asList(new WorldPosition(0,0),new WorldPosition(2,0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .1,g);
     }
     @Test void deadAndPureDetection() {
         CreaturePatrolState c=creature(WorldGeometry.empty());

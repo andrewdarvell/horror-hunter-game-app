@@ -213,7 +213,7 @@ class CreaturePatrolStateTest {
 
     private static CreaturePatrolState create(List<WorldPosition> route, double speed, double radius,
                                              double pause, WorldGeometry geometry) {
-        return new CreaturePatrolState(route, speed, radius, pause, 3.0, geometry);
+        return new CreaturePatrolState(route, new CreatureBehaviorConfig(speed, 4, 3, 2, 2, 3.0, pause), radius, geometry);
     }
 
     private static void assertPosition(double x, double y, CreaturePatrolState patrol) {

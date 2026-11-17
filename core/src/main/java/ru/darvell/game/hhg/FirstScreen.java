@@ -21,7 +21,9 @@ import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
+import ru.darvell.game.hhg.domain.actor.CreatureBehaviorConfig;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
+import ru.darvell.game.hhg.domain.actor.CreaturePatrolState.Behavior;
 import ru.darvell.game.hhg.domain.actor.HunterState;
 import ru.darvell.game.hhg.domain.world.StaticAabb;
 import ru.darvell.game.hhg.domain.tactical.TacticalGrid;
@@ -51,6 +53,7 @@ public class FirstScreen implements Screen {
     private WorldPosition visualHunterPosition;
     private WorldPosition visualCreaturePosition;
     private boolean transitionJustCreated;
+    private boolean discardRenderDelta;
     private boolean pointerReady;
     private boolean active;
     private boolean primaryDown;
@@ -221,7 +224,7 @@ public class FirstScreen implements Screen {
         CreaturePatrolState creaturePatrol = new CreaturePatrolState(Arrays.asList(
             new WorldPosition(5.0, 0.0),
             new WorldPosition(5.0, 1.0)
-        ), 2.0, 0.3, 0.5, 3.0, worldGeometry);
+        ), new CreatureBehaviorConfig(2.0, 4.0, 3.0, 2.0, 2.0, 3.0, 0.5), 0.3, worldGeometry);
         tacticalGrid = new TacticalGrid(0.0, 0.0, PROTOTYPE_CELL_SIZE);
         scene = new WorldSceneState(hunter, creaturePatrol, tacticalGrid, worldGeometry);
         camera = new OrthographicCamera();
@@ -254,7 +257,8 @@ public class FirstScreen implements Screen {
     @Override
     public void render(float delta) {
         TacticalEntryResult.Outcome outcome = updateScene(axis(Input.Keys.A, Input.Keys.D),
-            axis(Input.Keys.S, Input.Keys.W), delta, Gdx.input.isKeyJustPressed(Input.Keys.T));
+            axis(Input.Keys.S, Input.Keys.W), discardRenderDelta ? 0 : delta, Gdx.input.isKeyJustPressed(Input.Keys.T));
+        discardRenderDelta = false;
         if (outcome == TacticalEntryResult.Outcome.NO_VALID_PLACEMENT
             || outcome == TacticalEntryResult.Outcome.INVALID_INPUT) {
             Gdx.app.log("Tactical entry", "Entry rejected: " + outcome);
@@ -269,8 +273,6 @@ public class FirstScreen implements Screen {
 
     TacticalEntryResult.Outcome updateScene(double x, double y, double delta, boolean manualEntry) {
         SceneMode previousMode = scene.getMode();
-        WorldPosition hunterStart = scene.getHunterPosition();
-        WorldPosition creatureStart = scene.getCreaturePosition();
         double safeDelta = Double.isFinite(delta) && delta >= 0.0 ? delta : 0.0;
         TacticalEntryResult.Outcome outcome = null;
         if (pointerModeChanged) {
@@ -291,7 +293,7 @@ public class FirstScreen implements Screen {
         if (previousMode == SceneMode.EXPLORATION && scene.getMode() == SceneMode.TACTICAL
             && outcome == TacticalEntryResult.Outcome.SUCCESS) {
             message = "";
-            transition = new TacticalEntryTransition(hunterStart, creatureStart,
+            transition = new TacticalEntryTransition(scene.getHunterBeforeEntry(), scene.getCreatureBeforeEntry(),
                 scene.getHunterPosition(), scene.getCreaturePosition());
             transitionJustCreated = true;
         }
@@ -380,7 +382,7 @@ public class FirstScreen implements Screen {
             32
         );
         shapeRenderer.setColor(scene.getCreatureHealth() == 0 ? Color.DARK_GRAY
-            : selectedTarget != null ? Color.MAGENTA : scene.isCreatureAlerted() ? Color.RED : Color.CYAN);
+            : selectedTarget != null ? Color.MAGENTA : scene.getCreatureBehavior() == Behavior.CHASE ? Color.RED : Color.CYAN);
         WorldPosition creaturePosition = visualCreaturePosition;
         shapeRenderer.circle(
             (float) creaturePosition.getX(),
@@ -394,8 +396,8 @@ public class FirstScreen implements Screen {
             float radius = (float) scene.getCreatureRadius();
             shapeRenderer.rectLine(x - radius, y - radius, x + radius, y + radius, .05f);
         }
-        WorldPosition lastSeen = scene.getLastSeenHunterPosition();
-        if (lastSeen != null && scene.getCreatureHealth() > 0) {
+        WorldPosition lastSeen = visibleLastSeen();
+        if (lastSeen != null) {
             double dx = lastSeen.getX() - creaturePosition.getX();
             double dy = lastSeen.getY() - creaturePosition.getY();
             double length = Math.hypot(dx, dy);
@@ -453,6 +455,25 @@ public class FirstScreen implements Screen {
         }
     }
 
+    WorldPosition visibleLastSeen() {
+        if (scene.getCreatureHealth() == 0) return null;
+        Behavior behavior = scene.getCreatureBehavior();
+        return scene.getMode() == SceneMode.TACTICAL || behavior == Behavior.CHASE || behavior == Behavior.SEARCH
+            ? scene.getLastSeenHunterPosition() : null;
+    }
+
+    String creatureBehaviorText() {
+        if (scene.getCreatureHealth() == 0) return "";
+        switch (scene.getCreatureBehavior()) {
+            case PATROL: return "Патрулирует";
+            case CHASE: return "Преследует";
+            case SEARCH: return "Ищет";
+            case RETURN: return scene.isCreatureReturnBlocked()
+                ? "Путь к патрулю перекрыт" : "Возвращается к патрулю";
+            default: throw new IllegalStateException("Unknown creature behavior");
+        }
+    }
+
     private void drawHud() {
         if (hudBatch == null) {
             hudBatch = new SpriteBatch();
@@ -483,6 +504,8 @@ public class FirstScreen implements Screen {
         }
         if (scene.getMode() != SceneMode.TACTICAL) {
             hudFont.setColor(Color.WHITE);
+            String behavior = creatureBehaviorText();
+            if (!behavior.isEmpty()) top = drawHudLine(behavior, left, top, textWidth);
             drawHudLine(message, left, top, textWidth);
             hudBatch.end();
             return;
@@ -616,7 +639,7 @@ public class FirstScreen implements Screen {
 
     @Override
     public void resume() {
-        // Invoked when your application is resumed after pause.
+        discardRenderDelta = true;
     }
 
     @Override
@@ -626,6 +649,7 @@ public class FirstScreen implements Screen {
         }
         clearSelection();
         active = false;
+        discardRenderDelta = true;
         primaryDown = false;
         previousInput = null;
     }

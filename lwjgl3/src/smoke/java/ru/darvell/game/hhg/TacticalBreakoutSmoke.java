@@ -27,7 +27,7 @@ public final class TacticalBreakoutSmoke extends ApplicationAdapter {
         TacticalGrid grid=new TacticalGrid(0,0,1);
         int h=scenario==0?2:scenario==3?0:1, e=scenario==3?-3:0;
         scene=new WorldSceneState(new HunterState(new WorldPosition(h+.5,.5),1,.4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(e+.5,.5),new WorldPosition(e+.5,1.5)),1,.3,.5,3,g),grid,g);
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(e+.5,.5),new WorldPosition(e+.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .3,g),grid,g);
         scene.enterTactical();
         if(scenario==2 || scenario==8) for(int i=1;i<=(scenario==2?12:11);i++) scene.tryMoveHunterTo(new CellCoordinates(1,i%2));
         if(scenario==5) for(int i=1;i<=3;i++) scene.tryMoveHunterTo(new CellCoordinates(1,i%2));
