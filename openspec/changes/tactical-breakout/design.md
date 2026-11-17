@@ -130,7 +130,7 @@ UI flow сохраняется: видимая кнопка «Прорыв · 2�
 | F4: невозможная траектория | H(0,0)→(2,2), L=√8, D=3, AABB(1.95,1.5,0.1,0.1), E(−3,0)/READY | Origin/endpoint и LOS центральной линии свободны; swept circle r=0.4 проникает в угол. REJECTED/BLOCKED_PATH, elapsed=0, без events и любых изменений |
 | F5: перемещение с сохранением tactical | H(1,0)/P1 → (3,0), L=2, D=2 | t1: BITE H3 → R3 → BREAKOUT_MOVED; t2: R2. Distance=3, LOS открыта, MOVED_STILL_TACTICAL, HP3/2, elapsed=2 |
 | F6: опасность после перемещения | Из H(1,0)/P1 шаги →(1,1), →(1,0), →(1,1) дают H3/E2, R1 при t3; breakout→(−1,1), L=2, D=2 | t4: RECOVERY_ENDED → BREAKOUT_MOVED→(−1,1) → PREPARATION_STARTED/P1; t5: BITE H2 → RECOVERY_STARTED/R3. MOVED_STILL_TACTICAL, HP2/2, elapsed=2 |
-| F7: hunter-only | После победы существо HP0/bite=null, H в (1,0); →(3,0), L=2, D=2 | offset1: BREAKOUT_MOVED; offset2: TACTICAL_EXITED. ESCAPED, HP обоих неизменны, bite=null, elapsed=2; исходное cumulative time сохраняется с прибавкой 2 |
+| F7: hunter-only | После победы и ручного повторного входа существо HP0/bite=null, H в (1,0); →(3,0), L=2, D=2 | offset1: BREAKOUT_MOVED; offset2: TACTICAL_EXITED. ESCAPED, HP обоих неизменны, bite=null, elapsed=2; исходное cumulative time сохраняется с прибавкой 2 |
 | F8: повторный прорыв | Продолжение F5 при t2: H(3,0), HP3/2, R2; новая команда→(5,0), L=2, D=2 | t3: R1 → BREAKOUT_MOVED; t4: RECOVERY_ENDED/READY → TACTICAL_EXITED. ESCAPED, HP3/2; второй elapsed=2, общий time=4. Без бесплатного reset/recovery/cooldown |
 
 F3 достигается 12 обычными чередующимися соседними шагами (1,0)↔(1,1), укусы t1/t5/t9, H1/P1 при t12; начальные HP не подменяются fixture-магией. Контроль на том же снимке: обычный шаг→(2,0) заставляет укус промахнуться и сохраняет H1 при t13. F6 доказывает, что RECOVERING в начале не означает безопасность всего действия.
@@ -166,3 +166,10 @@ F3 достигается 12 обычными чередующимися сос�
 2. После review и отдельного запроса implementation — отдельная ветка/PR, domain → tests → core → проверки; подтвердить актуальность зависимостей combat-rhythm/safe-tactical-exit, не закрывая их собственную ручную приёмку.
 3. Будущий verification.md содержит реальные команды, результаты, screenshots, manual/Android ограничения. В planning проверяются документы и существующие geometry queries; новая механика не объявляется реализованной.
 4. Только после приёмки синхронизировать main specs с учётом safe-tactical-exit и архивировать. Persistent migration не нужна; откат implementation затрагивает домен и UI вместе.
+
+
+## Уточнение владельца к implementation PR #30
+
+Ранее утверждённый safe-tactical-exit требовал явной команды выхода после победы. По новому решению владельца принятую атаку, которая снижает HP последнего живого существа до 0, завершает автоматический переход в exploration. Домен публикует его атомарно с HIT, фактическим временем атаки, HP и позициями. Последним событием на сроке HIT записывается TACTICAL_EXITED. При ручном hunter-only entry переход не повторяется, поскольку новый летальный HIT отсутствует.
+
+FirstScreen использует существующий 240-мс показ атаки и busy gate. Во время победного показа видны попадание, тело и итог боя. Команды и WASD игнорируются, включая обновление конечного кадра. Новый ручной вход доступен после показа. F7 в проверках прорыва начинается с ручного входа после автоматического выхода.

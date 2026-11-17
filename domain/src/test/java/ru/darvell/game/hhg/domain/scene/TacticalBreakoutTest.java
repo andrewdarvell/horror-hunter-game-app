@@ -68,7 +68,7 @@ class TacticalBreakoutTest {
     }
 
     @Test void F7HunterOnlyAndRecoveryWindow() {
-        WorldSceneState s=scene(1,0); attack(s); attack(s);
+        WorldSceneState s=scene(1,0); attack(s); attack(s); s.enterTactical();
         long time=s.getTacticalTimeUnits(); int hp=s.getHunterHealth();
         assertEquals(ESCAPED,run(s,3,0).getOutcome()); assertNull(s.getBiteState());
         assertEquals(time+2,s.getTacticalTimeUnits()); assertEquals(hp,s.getHunterHealth());

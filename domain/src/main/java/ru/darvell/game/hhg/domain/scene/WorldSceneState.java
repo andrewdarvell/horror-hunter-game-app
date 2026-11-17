@@ -294,16 +294,21 @@ public final class WorldSceneState {
         SceneMode preparedMode = mode;
         boolean preparedContact = contactOnPreviousCheck;
         Outcome outcome = attack ? (hit ? Outcome.HIT : Outcome.INTERRUPTED) : Outcome.MOVE;
+        boolean exitAfterVictory = hit && !creature.isDefeated() && preparedCreature.isDefeated();
+        boolean exitAfterBreakout = false;
         if (breakout) {
-            if (preparedHunter.isDefeated()) outcome = Outcome.INTERRUPTED;
-            else if (hasThreat(preparedHunter, preparedCreature, preparedPlacement)) outcome = Outcome.MOVED_STILL_TACTICAL;
-            else {
-                outcome = Outcome.ESCAPED;
-                preparedMode = SceneMode.EXPLORATION;
-                preparedPlacement = null;
-                preparedContact = false;
-                events.add(new Event(EventType.TACTICAL_EXITED, elapsed));
+            if (preparedHunter.isDefeated()) {
+                outcome = Outcome.INTERRUPTED;
+            } else {
+                exitAfterBreakout = !hasThreat(preparedHunter, preparedCreature, preparedPlacement);
+                outcome = exitAfterBreakout ? Outcome.ESCAPED : Outcome.MOVED_STILL_TACTICAL;
             }
+        }
+        if (exitAfterVictory || exitAfterBreakout) {
+            preparedMode = SceneMode.EXPLORATION;
+            preparedPlacement = null;
+            preparedContact = false;
+            events.add(new Event(EventType.TACTICAL_EXITED, elapsed));
         }
         TacticalAttackResult result = new TacticalAttackResult(outcome,
             hunter.getHealth(), preparedHunter.getHealth(), creature.getHealth(), preparedCreature.getHealth(),

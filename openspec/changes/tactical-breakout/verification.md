@@ -29,7 +29,7 @@
 | Android debug build | Успешно: `android/build/outputs/apk/debug/android-debug.apk` |
 | Desktop breakout smoke | `TACTICAL_BREAKOUT_SMOKE_OK F1-F8/F6-death` |
 | Combat W/D/C desktop smoke | `COMBAT_RHYTHM_SMOKE_OK W/D/C` |
-| Safe exit desktop regression | `SAFE_EXIT_SMOKE_OK victory/exit/hunter-only/history` |
+| Выход после победы и повторный вход | `VICTORY_EXIT_SMOKE_OK automatic/hunter-only/history` |
 | OpenSpec strict validation | `openspec validate tactical-breakout --strict --no-interactive` — успешно |
 | Whitespace | `git diff --check` — успешно |
 
@@ -47,7 +47,7 @@ Smoke использует настоящий FirstScreen, OpenGL backend и Inp
 | F4 | HP4/E2, time=0, H(0,0), отказ без движения |
 | F5 | H3/E2, time=2, H(3,0), tactical |
 | F6 | H2/E2, time=5, H(−1,1), tactical |
-| F7 | H3/E0 после двух ударов, time=6, H(3,0), exploration |
+| F7 | H3/E0 после двух ударов и ручного повторного входа, time=6, H(3,0), exploration |
 | F8 | H3/E2, time=4, H(5,0), exploration |
 | F6-death (в логе F9) | H0/E2, time=13, H(−1,1), tactical, duration=2 |
 
@@ -70,3 +70,13 @@ Android SDK доступен, APK собран. `adb devices -l` вернул п
 - [Раненый побег: portrait preview](evidence/wounded-preview-portrait.png)
 - [Невозможный путь возле угла](evidence/blocked-corner-preview.png)
 - [Поздняя смерть в endpoint](evidence/endpoint-death.png)
+
+## Дополнение к PR #30: автоматический выход после победы
+
+Ранее утверждённый safe-tactical-exit требовал явного выхода после победы. По уточнению владельца последний летальный HIT теперь атомарно завершает бой и записывает TACTICAL_EXITED после HIT на том же сроке. Победа сохраняет фактически прошедшее время, позиции и итоговые HP. Показ атаки длится прежние 240 мс. В течение показа и на конечном кадре заблокированы WASD, T и pointer-команды. Новый ручной hunter-only entry сохраняет историю и остаётся в tactical.
+
+- Domain: проверены прогноз летальной атаки без мутации, завершённый HIT и событие выхода, правильное время и позиции, отсутствие немедленного повторного входа, ручной hunter-only entry и возможность шага на клетку тела.
+- Core: проверены блокировка WASD и T на первом и конечном кадрах, удержание pointer, отсутствие click-through, возврат движения, одновременные T и touch при следующем ручном входе и сохранение того же экземпляра результата.
+- Полный Gradle проход из раздела выше повторён с новой семантикой победы, включая Android debug build и desktop smoke F1–F8/F6-death и W/D/C. Повторный запуск core и W/D/C smoke проверил возврат движения и сохранил [снимок победного показа](evidence/victory-presentation.png).
+- Строгая OpenSpec validation прошла для tactical-breakout и safe-tactical-exit. Изменение контракта записано в delta-spec. Main specs ожидают приёмки.
+- Проверки победного выхода выполнены автоматически. Ручной playtest победного показа и Android touch остаются открытыми.

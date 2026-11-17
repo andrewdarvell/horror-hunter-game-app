@@ -66,6 +66,11 @@ public class FirstScreen implements Screen {
     private BitmapFont hudFont;
 
     boolean isBusy() { return transition != null || attackDisplay > 0; }
+    boolean isShowingVictory() {
+        TacticalAttackResult result = scene.getLastResolution();
+        return attackDisplay > 0 && result != null && result.getKind() == TacticalAttackResult.Kind.ATTACK
+            && result.getModeAfter() == SceneMode.EXPLORATION && result.isCreatureDefeated();
+    }
     boolean hasSelectedTarget() { return selectedTarget != null; }
 
     private boolean insideViewport(int x, int y) {
@@ -122,7 +127,8 @@ public class FirstScreen implements Screen {
         if (result.getOutcome() == TacticalAttackResult.Outcome.INTERRUPTED) text.append(result.getKind() == TacticalAttackResult.Kind.BREAKOUT ? " · Прорыв прерван" : " · Удар прерван");
         if (result.isCreatureDefeated()) text.append(" · Цель повержена");
         if (result.isHunterDefeated()) text.append(" · Охотник повержен");
-        message = text.toString();
+        message = result.getKind() == TacticalAttackResult.Kind.ATTACK
+            && result.getModeAfter() == SceneMode.EXPLORATION ? "Победа · " + text : text.toString();
     }
     private InputProcessor previousInput;
     private final InputAdapter pointerInput = new InputAdapter() {
@@ -284,6 +290,7 @@ public class FirstScreen implements Screen {
         }
         if (previousMode == SceneMode.EXPLORATION && scene.getMode() == SceneMode.TACTICAL
             && outcome == TacticalEntryResult.Outcome.SUCCESS) {
+            message = "";
             transition = new TacticalEntryTransition(hunterStart, creatureStart,
                 scene.getHunterPosition(), scene.getCreaturePosition());
             transitionJustCreated = true;
@@ -351,7 +358,7 @@ public class FirstScreen implements Screen {
     private void drawScene() {
         ScreenUtils.clear(0.10f, 0.16f, 0.12f, 1.0f);
         shapeRenderer.setProjectionMatrix(camera.combined);
-        if (debugGridVisible || scene.getMode() == SceneMode.TACTICAL) {
+        if (debugGridVisible || scene.getMode() == SceneMode.TACTICAL || isShowingVictory()) {
             drawDebugGrid();
         }
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -381,6 +388,12 @@ public class FirstScreen implements Screen {
             (float) scene.getCreatureRadius(),
             32
         );
+        if (isShowingVictory()) {
+            shapeRenderer.setColor(Color.GOLD);
+            float x = (float) creaturePosition.getX(), y = (float) creaturePosition.getY();
+            float radius = (float) scene.getCreatureRadius();
+            shapeRenderer.rectLine(x - radius, y - radius, x + radius, y + radius, .05f);
+        }
         WorldPosition lastSeen = scene.getLastSeenHunterPosition();
         if (lastSeen != null && scene.getCreatureHealth() > 0) {
             double dx = lastSeen.getX() - creaturePosition.getX();
@@ -428,7 +441,7 @@ public class FirstScreen implements Screen {
 
     Rectangle modeButtonBounds() {
         int width = viewport.getScreenWidth(), height = viewport.getScreenHeight();
-        if (!pointerReady || width < 48 || height < (selectedTarget == null ? 48 : 108)) return null;
+        if (isShowingVictory() || !pointerReady || width < 48 || height < (selectedTarget == null ? 48 : 108)) return null;
         return new Rectangle(viewport.getScreenX(), viewport.getScreenY(), Math.min(width, scene.getMode() == SceneMode.TACTICAL && width >= 96 ? Math.min(MODE_BUTTON_WIDTH, width / 2) : MODE_BUTTON_WIDTH), 48);
     }
 

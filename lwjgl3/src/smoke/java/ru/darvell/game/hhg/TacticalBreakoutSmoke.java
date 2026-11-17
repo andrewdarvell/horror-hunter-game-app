@@ -31,7 +31,7 @@ public final class TacticalBreakoutSmoke extends ApplicationAdapter {
         scene.enterTactical();
         if(scenario==2 || scenario==8) for(int i=1;i<=(scenario==2?12:11);i++) scene.tryMoveHunterTo(new CellCoordinates(1,i%2));
         if(scenario==5) for(int i=1;i<=3;i++) scene.tryMoveHunterTo(new CellCoordinates(1,i%2));
-        if(scenario==6) { scene.tryAttackCreature(new CellCoordinates(0,0)); scene.tryAttackCreature(new CellCoordinates(0,0)); }
+        if(scenario==6) { scene.tryAttackCreature(new CellCoordinates(0,0)); scene.tryAttackCreature(new CellCoordinates(0,0)); scene.enterTactical(); }
         if(scenario==7) scene.tryBreakoutTo(new CellCoordinates(3,0));
         target=new CellCoordinates(scenario==3?2:scenario==4||scenario==6?3:scenario==5||scenario==8?-1:scenario==7?5:4,
             scenario==3?2:scenario==5||scenario==8?1:0);
