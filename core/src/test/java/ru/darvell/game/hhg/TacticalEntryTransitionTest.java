@@ -83,6 +83,21 @@ class TacticalEntryTransitionTest {
         assertSame(creatureEnd, transition.getCreaturePosition());
     }
 
+    @Test
+    void reentryInterpolatesFromLastChasePositionAfterBreakout() {
+        WorldPosition hunter = new WorldPosition(3.5, .5);
+        WorldPosition creatureBeforeEntry = new WorldPosition(2.02, .5);
+        WorldPosition creatureAfterEntry = new WorldPosition(2.5, .5);
+        TacticalEntryTransition transition = new TacticalEntryTransition(
+            hunter, creatureBeforeEntry, hunter, creatureAfterEntry);
+        assertSame(creatureBeforeEntry, transition.getCreaturePosition());
+        transition.advance(.11);
+        assertPosition(transition.getCreaturePosition(), 2.26, .5);
+        assertEquals(hunter, transition.getHunterPosition());
+        transition.advance(.11);
+        assertSame(creatureAfterEntry, transition.getCreaturePosition());
+    }
+
     private TacticalEntryTransition transition() {
         return new TacticalEntryTransition(hunterStart, creatureStart, hunterEnd, creatureEnd);
     }

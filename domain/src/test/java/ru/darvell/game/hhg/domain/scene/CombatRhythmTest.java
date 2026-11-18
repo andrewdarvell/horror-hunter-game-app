@@ -16,7 +16,7 @@ class CombatRhythmTest {
     static WorldSceneState scene(int x, int damage) {
         WorldGeometry g=WorldGeometry.empty();
         WorldSceneState s=new WorldSceneState(new HunterState(new WorldPosition(x+.5,.5),1,.4).withDamage(damage),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .4,g),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, 1.5, .5), .4,g),
             new TacticalGrid(0,0,1),g);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS,s.enterTactical()); return s;
     }
@@ -114,7 +114,7 @@ class CombatRhythmTest {
     @Test void LosLossMissesWithoutCancellingRecoveryAndAutoEntryUsesSameCycle() {
         WorldGeometry g=new WorldGeometry(Arrays.asList(new StaticAabb(.95,.95,.1,.1)));
         WorldSceneState s=new WorldSceneState(new HunterState(new WorldPosition(1.5,.5),1,.1),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .1,g),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, 1.5, .5), .1,g),
             new TacticalGrid(0,0,1),g);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS,s.update(0,0,0,false));
         phase(s,PREPARING,1); assertTrue(s.isCreatureAlerted());

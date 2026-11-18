@@ -224,7 +224,7 @@ public class FirstScreen implements Screen {
         CreaturePatrolState creaturePatrol = new CreaturePatrolState(Arrays.asList(
             new WorldPosition(5.0, 0.0),
             new WorldPosition(5.0, 1.0)
-        ), new CreatureBehaviorConfig(2.0, 4.0, 3.0, 2.0, 2.0, 3.0, 0.5), 0.3, worldGeometry);
+        ), new CreatureBehaviorConfig(2.0, 4.0, 3.0, 2.0, 2.0, 3.0, 1.5, 0.5), 0.3, worldGeometry);
         tacticalGrid = new TacticalGrid(0.0, 0.0, PROTOTYPE_CELL_SIZE);
         scene = new WorldSceneState(hunter, creaturePatrol, tacticalGrid, worldGeometry);
         camera = new OrthographicCamera();

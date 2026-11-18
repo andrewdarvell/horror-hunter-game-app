@@ -52,11 +52,13 @@ class FirstScreenTransitionTest {
 
     @Test
     void automaticEntryStartsAtTheCheckThatCreatedContact() {
-        Fixture f = new Fixture(p(0, 0), p(3.5, 0), WorldGeometry.empty());
-        assertEquals(Outcome.SUCCESS, f.screen.updateScene(1, 0, 0.5, false));
+        Fixture f = new Fixture(p(.45, 0), p(2, 0), WorldGeometry.empty(), 5);
+        assertNull(f.screen.updateScene(0, 0, 0, false));
+        assertEquals("Преследует", f.screen.creatureBehaviorText());
+        assertEquals(Outcome.SUCCESS, f.screen.updateScene(1, 0, .01, false));
         assertEquals(.5, f.screen.getVisualHunterPosition().getX(), 1e-10);
         assertEquals(0, f.screen.getVisualHunterPosition().getY());
-        assertEquals(p(3.5, 0), f.screen.getVisualCreaturePosition());
+        assertEquals(p(2, 0), f.screen.getVisualCreaturePosition());
         assertEquals(f.screen.getVisualHunterPosition(), f.scene.getLastSeenHunterPosition());
         assertTrue(f.scene.isCreatureAlerted());
         Object[] frozen = snapshot(f.scene);
@@ -99,7 +101,7 @@ class FirstScreenTransitionTest {
 
     @Test
     void diagonalContactUsesBothResolvedAxesBeforeSnap() {
-        Fixture f = new Fixture(p(0, 0), p(3.04, .49), WorldGeometry.empty());
+        Fixture f = new Fixture(p(0, 0), p(1.7, .49), WorldGeometry.empty());
         assertEquals(Outcome.SUCCESS, f.screen.updateScene(1, 1, .3, false));
         WorldPosition origin = f.screen.getVisualHunterPosition();
         assertTrue(origin.getX() > 0);
@@ -115,8 +117,11 @@ class FirstScreenTransitionTest {
         Fixture f = new Fixture(p(2.5, .5), p(.5, .5), WorldGeometry.empty(), 5);
         assertEquals("Патрулирует", f.screen.creatureBehaviorText());
         assertNull(f.screen.visibleLastSeen());
-        assertEquals(Outcome.SUCCESS, f.scene.update(0, 0, 0, false));
+        assertNull(f.screen.updateScene(0, 0, .05, false));
         assertEquals("Преследует", f.screen.creatureBehaviorText());
+        assertEquals(SceneMode.EXPLORATION, f.scene.getMode());
+        assertTrue(f.screen.getVisualCreaturePosition().getX() > .5);
+        assertEquals(Outcome.SUCCESS, f.scene.enterTactical());
         f.scene.tryBreakoutTo(new CellCoordinates(4, 0));
         f.screen.updateScene(1, 0, .2, false);
         assertEquals("Ищет", f.screen.creatureBehaviorText());
@@ -140,12 +145,12 @@ class FirstScreenTransitionTest {
     void invalidPlatformIntervalsAreZeroButDoNotWeakenDomainValidation() {
         for (double delta : new double[] {0, -1, Double.NaN,
             Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY}) {
-            Fixture f = new Fixture(p(0, 0), p(3, 0), WorldGeometry.empty());
+            Fixture f = new Fixture(p(0, 0), p(1.5, 0), WorldGeometry.empty());
             assertEquals(Outcome.SUCCESS, f.screen.updateScene(1, 1, delta, false));
             assertEquals(p(0, 0), f.scene.getLastSeenHunterPosition());
             f.screen.updateScene(1, 1, delta, true);
             assertEquals(p(0, 0), f.screen.getVisualHunterPosition());
-            assertEquals(p(3, 0), f.screen.getVisualCreaturePosition());
+            assertEquals(p(1.5, 0), f.screen.getVisualCreaturePosition());
             if (delta != 0) {
                 assertThrows(IllegalArgumentException.class,
                     () -> f.scene.update(0, 0, delta, false));
@@ -209,7 +214,7 @@ class FirstScreenTransitionTest {
             TacticalGrid grid = new TacticalGrid(0, 0, 1);
             scene = new WorldSceneState(new HunterState(hunter, speed, 0.4),
                 new CreaturePatrolState(Arrays.asList(creature, creature.translate(0, 1)),
-                    new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry), grid, geometry);
+                    new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, 0.5), 0.3, geometry), grid, geometry);
             screen = new FirstScreen(scene, grid, geometry, viewport, null);
         }
     }

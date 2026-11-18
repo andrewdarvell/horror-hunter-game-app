@@ -21,7 +21,7 @@ public final class TacticalEntryPlanner {
             return TacticalEntryResult.failure(TacticalEntryResult.Outcome.INVALID_INPUT);
         }
         return select(candidates(hunter, hunterRadius, hunterSource, grid, geometry),
-            candidates(creature, creatureRadius, creatureSource, grid, geometry));
+            candidates(creature, creatureRadius, creatureSource, grid, geometry), hunterRadius, creatureRadius);
     }
 
     public TacticalEntryResult planHunterOnly(WorldPosition hunter, double radius,
@@ -91,13 +91,20 @@ public final class TacticalEntryPlanner {
         return result;
     }
 
-    static TacticalEntryResult select(List<Candidate> hunters, List<Candidate> creatures) {
+    static TacticalEntryResult select(List<Candidate> hunters, List<Candidate> creatures,
+                                      double hunterRadius, double creatureRadius) {
+        // При переполнении суммы сравниваем расстояния в половинном масштабе.
+        double scale = Double.isFinite(hunterRadius + creatureRadius) ? 1.0 : 0.5;
+        double minimumSeparation = hunterRadius * scale + creatureRadius * scale;
         Candidate bestHunter = null;
         Candidate bestCreature = null;
         for (Candidate hunter : hunters) {
             for (Candidate creature : creatures) {
                 if (hunter.cell.equals(creature.cell)
                     || !Double.isFinite(hunter.distance + creature.distance)) continue;
+                double separation = Math.hypot(hunter.center.getX() * scale - creature.center.getX() * scale,
+                    hunter.center.getY() * scale - creature.center.getY() * scale);
+                if (separation < minimumSeparation) continue;
                 if (bestHunter == null || compare(hunter, creature, bestHunter, bestCreature) < 0) {
                     bestHunter = hunter;
                     bestCreature = creature;

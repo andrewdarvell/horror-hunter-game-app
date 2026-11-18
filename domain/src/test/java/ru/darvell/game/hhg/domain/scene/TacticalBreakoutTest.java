@@ -18,10 +18,24 @@ class TacticalBreakoutTest {
         TacticalAttackResult preview = s.previewBreakoutTo(c(x,y));
         assertArrayEquals(before, snapshot(s));
         TacticalAttackResult r = s.tryBreakoutTo(c(x,y));
+        assertEquals(preview.getKind(), r.getKind());
         assertEquals(preview.getOutcome(), r.getOutcome());
+        assertEquals(preview.getRejectionReason(), r.getRejectionReason());
+        assertEquals(preview.getHunterBefore(), r.getHunterBefore());
         assertEquals(preview.getHunterAfter(), r.getHunterAfter());
+        assertEquals(preview.getCreatureBefore(), r.getCreatureBefore());
+        assertEquals(preview.getCreatureAfter(), r.getCreatureAfter());
+        assertEquals(preview.getPositionBefore(), r.getPositionBefore());
         assertEquals(preview.getPositionAfter(), r.getPositionAfter());
+        assertEquals(preview.getModeBefore(), r.getModeBefore());
         assertEquals(preview.getModeAfter(), r.getModeAfter());
+        assertSame(preview.getBiteBefore(), r.getBiteBefore());
+        if (preview.getBiteAfter() == null) {
+            assertNull(r.getBiteAfter());
+        } else {
+            assertEquals(preview.getBiteAfter().getPhase(), r.getBiteAfter().getPhase());
+            assertEquals(preview.getBiteAfter().getRemainingUnits(), r.getBiteAfter().getRemainingUnits());
+        }
         assertEquals(preview.getDuration(), r.getDuration());
         assertEquals(preview.getPlannedDuration(), r.getPlannedDuration());
         assertEquals(events(preview), events(r));
@@ -57,10 +71,11 @@ class TacticalBreakoutTest {
     }
 
     @Test void F5AndF8RepeatCostsAndF6LateBite() {
-        WorldSceneState s=scene(1,0); TacticalAttackResult first=run(s,3,0);
-        assertEquals(MOVED_STILL_TACTICAL, first.getOutcome()); phase(s,RECOVERING,2);
-        assertEquals(ESCAPED,run(s,5,0).getOutcome()); phase(s,READY,0);
-        assertEquals(4,s.getTacticalTimeUnits()); assertEquals(3,s.getHunterHealth());
+        WorldSceneState s=custom(1,0,0,0,WorldGeometry.empty(),1,2);
+        TacticalAttackResult first=run(s,0,2);
+        assertEquals(MOVED_STILL_TACTICAL, first.getOutcome()); phase(s,RECOVERING,1);
+        assertEquals(ESCAPED,run(s,0,4).getOutcome()); phase(s,READY,0);
+        assertEquals(5,s.getTacticalTimeUnits()); assertEquals(3,s.getHunterHealth());
         assertEquals(MOVED_STILL_TACTICAL, first.getOutcome());
         s=scene(1,0); move(s,1,1); move(s,1,0); move(s,1,1);
         TacticalAttackResult r=run(s,-1,1); assertEquals(MOVED_STILL_TACTICAL,r.getOutcome());
@@ -77,9 +92,13 @@ class TacticalBreakoutTest {
     }
 
     private WorldSceneState custom(int hx,int hy,int ex,int ey,WorldGeometry g,double size) {
+        return custom(hx,hy,ex,ey,g,size,1.5);
+    }
+
+    private WorldSceneState custom(int hx,int hy,int ex,int ey,WorldGeometry g,double size,double engagement) {
         WorldSceneState s=new WorldSceneState(new HunterState(new WorldPosition((hx+.5)*size,(hy+.5)*size),1,.4*size),
             new CreaturePatrolState(Arrays.asList(new WorldPosition((ex+.5)*size,(ey+.5)*size),
-                new WorldPosition((ex+.5)*size,(ey+1.5)*size)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .3*size,g),new TacticalGrid(0,0,size),g);
+                new WorldPosition((ex+.5)*size,(ey+1.5)*size)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, engagement, .5), .3*size,g),new TacticalGrid(0,0,size),g);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS,s.enterTactical()); return s;
     }
 
@@ -120,7 +139,7 @@ class TacticalBreakoutTest {
         assertEquals(3,run(scene(2,0),4,2).getPlannedDuration());
         assertEquals(2,run(custom(2,0,0,0,WorldGeometry.empty(),2),4,0).getDuration());
         s=custom(-2,1,0,0,WorldGeometry.empty(),1);
-        assertEquals(MOVED_STILL_TACTICAL,run(s,2,1).getOutcome()); assertEquals(4,s.getHunterHealth()); phase(s,READY,0);
+        assertEquals(ESCAPED,run(s,2,1).getOutcome()); assertEquals(4,s.getHunterHealth()); phase(s,READY,0);
     }
 
     @Test void AllRecoveryRemaindersAndShortPassage() {
@@ -128,7 +147,7 @@ class TacticalBreakoutTest {
             WorldSceneState s=scene(1,0);
             for(int i=1;i<=steps;i++) move(s,1,i%2);
             TacticalAttackResult r=run(s,1+distance,steps%2);
-            assertEquals(steps%2==0 && distance==2 ? MOVED_STILL_TACTICAL : ESCAPED,r.getOutcome());
+            assertEquals(ESCAPED,r.getOutcome());
             assertEquals(3,s.getHunterHealth());
             int expected=Math.max(0,4-steps-r.getDuration());
             phase(s,expected==0?READY:RECOVERING,expected);
@@ -137,6 +156,27 @@ class TacticalBreakoutTest {
         WorldSceneState s=custom(0,0,-3,0,wall,1);
         rejected(s,4,0,BLOCKED_PATH);
         assertNotEquals(REJECTED,run(s,2,0).getOutcome());
+    }
+
+    @Test void safeExitAndBreakoutUseDifferentThresholds() {
+        WorldGeometry empty = WorldGeometry.empty();
+        WorldSceneState atDetectionLimit = custom(3,0,0,0,empty,1);
+        assertFalse(atDetectionLimit.isCreatureAlerted());
+        assertEquals(TacticalExitResult.ACTIVE_THREAT, atDetectionLimit.tryExitTactical());
+
+        WorldSceneState demo = custom(0,0,0,2,empty,1);
+        WorldSceneState longerRange = custom(0,0,0,2,empty,1,2);
+        assertEquals(TacticalExitResult.ACTIVE_THREAT, demo.exitTacticalAvailability());
+        TacticalAttackResult escaped = run(demo,2,2);
+        TacticalAttackResult stayed = run(longerRange,2,2);
+        assertEquals(ESCAPED, escaped.getOutcome());
+        assertEquals(MOVED_STILL_TACTICAL, stayed.getOutcome());
+        assertEquals(3, escaped.getDuration());
+        assertEquals(3, stayed.getDuration());
+
+        WorldSceneState adjacent = custom(0,0,2,1,empty,1.25);
+        assertEquals(MOVED_STILL_TACTICAL, run(adjacent,3,0).getOutcome());
+        assertEquals(3, adjacent.getHunterHealth());
     }
 
     @Test void OverflowAndRefusalsPublishNothingButActualElapsedFits() throws Exception {
@@ -155,7 +195,7 @@ class TacticalBreakoutTest {
         s=custom(2,0,0,0,WorldGeometry.empty(),1);
         assertEquals(TacticalExitResult.ACTIVE_THREAT,s.tryExitTactical());
         s= new WorldSceneState(new HunterState(new WorldPosition(1.5,.5),1,.4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .3,WorldGeometry.empty()),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(.5,.5),new WorldPosition(.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, 1.5, .5), .3,WorldGeometry.empty()),
             new TacticalGrid(0,0,1),WorldGeometry.empty());
         s.update(0,0,0,false); assertTrue(s.isCreatureAlerted());
         run(s,4,0); TacticalAttackResult history=s.getLastResolution(); PrototypeBiteState phase=s.getBiteState();

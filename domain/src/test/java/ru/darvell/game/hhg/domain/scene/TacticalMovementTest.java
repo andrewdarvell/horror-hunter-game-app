@@ -13,7 +13,7 @@ class TacticalMovementTest {
                                   CellCoordinates start, CellCoordinates creature) {
         WorldPosition cp = grid.cellToWorldCenter(creature);
         WorldSceneState s = new WorldSceneState(new HunterState(grid.cellToWorldCenter(start), 1, radius),
-            new CreaturePatrolState(Arrays.asList(cp, cp.translate(0, grid.getCellSize())), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry), grid, geometry);
+            new CreaturePatrolState(Arrays.asList(cp, cp.translate(0, grid.getCellSize())), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, 0.5), 0.3, geometry), grid, geometry);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS, s.enterTactical());
         return s;
     }
@@ -65,7 +65,7 @@ class TacticalMovementTest {
     @Test void explorationRejectsEvenNull() {
         WorldGeometry g = WorldGeometry.empty();
         WorldSceneState s = new WorldSceneState(new HunterState(new WorldPosition(0, 0), 1, .4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(5, 0), new WorldPosition(5, 1)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .3, g),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(5, 0), new WorldPosition(5, 1)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, 1.5, .5), .3, g),
             new TacticalGrid(0, 0, 1), g);
         rejected(s, null, NOT_TACTICAL); rejected(s, c(1, 0), NOT_TACTICAL);
     }
@@ -101,8 +101,8 @@ class TacticalMovementTest {
     @Test void stepPreservesAlertAndLastSeenFromAutomaticEntry() {
         WorldGeometry g = WorldGeometry.empty();
         WorldSceneState s = new WorldSceneState(new HunterState(new WorldPosition(.5, .5), 1, .4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(2.5, .5), new WorldPosition(2.5, 1.5)),
-                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3, g), new TacticalGrid(0, 0, 1), g);
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(1.5, .5), new WorldPosition(1.5, 1.5)),
+                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, .5), .3, g), new TacticalGrid(0, 0, 1), g);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS, s.update(0, 0, 0, false));
         assertTrue(s.isCreatureAlerted());
         WorldPosition seen = s.getLastSeenHunterPosition(), creature = s.getCreaturePosition();
@@ -112,6 +112,15 @@ class TacticalMovementTest {
         assertSame(occupied, s.getPlacement().getCreatureCell()); assertTrue(s.isCreatureAlerted());
         Object[] frozen = snapshot(s);
         s.update(1, 1, 100, true); assertArrayEquals(frozen, snapshot(s));
+    }
+
+    @Test void diagonalCannotClipLivingBodyOnSmallGrid() {
+        TacticalGrid grid = new TacticalGrid(0, 0, .5);
+        WorldSceneState s = scene(grid, .1, WorldGeometry.empty(), c(0, 0), c(0, 1));
+        rejected(s, c(0, 1), OCCUPIED);
+        rejected(s, c(1, 1), BLOCKED_PATH);
+        assertEquals(SUCCESS, s.tryMoveHunterTo(c(1, 0)));
+        assertEquals(SUCCESS, s.tryMoveHunterTo(c(1, 1)));
     }
     private static WorldGeometry g(StaticAabb box) { return new WorldGeometry(Arrays.asList(box)); }
 }
