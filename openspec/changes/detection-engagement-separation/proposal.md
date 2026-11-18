@@ -75,4 +75,4 @@
 
 ## Process
 
-Этот PR содержит **только proposal**. До implementation нужен отдельный OpenSpec planning через `$openspec-update-change`, утверждение решений E1–E6, затем `$openspec-apply-change` в новом PR. Не изменять production код, main specs или архив change до приёмки.
+Исходный proposal принят в PR #34. Отдельный planning PR содержит design, delta-specs и tasks с предложенными решениями E1–E6. После утверждения решений можно отдельно запросить `$openspec-apply-change` в новом PR. Не изменять production код, main specs или архив change до приёмки.
