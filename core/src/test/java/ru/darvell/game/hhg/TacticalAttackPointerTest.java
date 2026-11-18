@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TacticalAttackPointerTest extends TacticalPointerTest {
     WorldSceneState combat() {
         WorldSceneState s=new WorldSceneState(new HunterState(new WorldPosition(.5,.5),1,.1),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(1.5,.5),new WorldPosition(1.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, .01, .5), .1,WorldGeometry.empty()),grid,WorldGeometry.empty());
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(1.5,.5),new WorldPosition(1.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, .01, .005, .5), .1,WorldGeometry.empty()),grid,WorldGeometry.empty());
         s.enterTactical(); return s;
     }
     void button() { handler.touchDown(viewport.getScreenX()+10,height-viewport.getScreenY()-viewport.getScreenHeight()+10,0,Input.Buttons.LEFT); }

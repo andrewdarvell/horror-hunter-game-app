@@ -18,8 +18,8 @@ class CreatureBehaviorConfigTest {
 
     @Test
     void identicalObservationsGiveEachCreatureItsOwnMovementAndSearchDuration() {
-        CreaturePatrolState first = creature(new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5));
-        CreaturePatrolState second = creature(new CreatureBehaviorConfig(1, 6, 1, 1, .5, 4, .25));
+        CreaturePatrolState first = creature(new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, .5));
+        CreaturePatrolState second = creature(new CreatureBehaviorConfig(1, 6, 1, 1, .5, 4, 2, .25));
         assertFalse(first.canDetect(position(4)));
         assertTrue(second.canDetect(position(4)));
         first.advancePatrol(.5);
@@ -61,7 +61,8 @@ class CreatureBehaviorConfigTest {
 
     @Test
     void copiesAndTacticalRoundTripKeepConfigAndActiveSearch() {
-        CreatureBehaviorConfig config = new CreatureBehaviorConfig(1, 6, 1, 3, .5, 4, .25);
+        CreatureBehaviorConfig config = new CreatureBehaviorConfig(1, 6, 1, 3, .5, 4, 2, .25);
+        assertEquals(2.0, config.getEngagementRange());
         CreaturePatrolState actor = creature(config);
         assertSame(config, actor.copy().getBehaviorConfig());
         assertSame(config, actor.withDamage(1).getBehaviorConfig());
@@ -84,7 +85,7 @@ class CreatureBehaviorConfigTest {
 
     @Test
     void zeroDurationSkipsSearchAndUsesReturnSpeed() {
-        CreaturePatrolState actor = creature(new CreatureBehaviorConfig(1, 4, 3, 1, 0, 3, .5));
+        CreaturePatrolState actor = creature(new CreatureBehaviorConfig(1, 4, 3, 1, 0, 3, 1.5, .5));
         actor.observeHunter(position(2.5));
         actor.advanceExploration(.1, null, 0);
         actor.observeHunter(position(8));
@@ -97,15 +98,17 @@ class CreatureBehaviorConfigTest {
 
     @Test
     void rejectsNonFiniteAndOutOfRangeParameters() {
-        for (int index = 0; index < 7; index++) {
+        for (int index = 0; index < 8; index++) {
             for (double bad : new double[] {Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, -1, 0}) {
                 if (index == 4 && bad == 0) continue;
-                double[] values = {2, 4, 3, 2, 2, 3, .5};
+                double[] values = {2, 4, 3, 2, 2, 3, 1.5, .5};
                 values[index] = bad;
                 assertThrows(IllegalArgumentException.class, () -> new CreatureBehaviorConfig(
-                    values[0], values[1], values[2], values[3], values[4], values[5], values[6]));
+                    values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7]));
             }
         }
+        assertThrows(IllegalArgumentException.class, () -> new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 3, .5));
+        assertThrows(IllegalArgumentException.class, () -> new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 4, .5));
         assertThrows(IllegalArgumentException.class, () -> creature(null));
     }
 

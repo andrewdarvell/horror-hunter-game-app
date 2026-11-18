@@ -33,6 +33,8 @@ class WorldSceneStateTest {
                 assertEquals(5, scene.getHunterPosition().getX(), 1e-10);
                 assertEquals(-4, scene.getHunterPosition().getY(), 1e-10);
                 assertFalse(scene.isCreatureAlerted());
+                assertNull(scene.update(0, 1, 0.22, false));
+                assertEquals(CreaturePatrolState.Behavior.CHASE, scene.getCreatureBehavior());
                 assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.update(0, 1, 0.4, false));
                 assertEquals(scene.getHunterBeforeEntry(), scene.getLastSeenHunterPosition());
                 assertTrue(scene.getLastSeenHunterPosition().getY() >= -3.01);
@@ -64,14 +66,14 @@ class WorldSceneStateTest {
         }
         WorldGeometry geometry = new WorldGeometry(boxes);
         CreaturePatrolState creature = new CreaturePatrolState(Arrays.asList(
-            new WorldPosition(3, 0), new WorldPosition(3, 1)), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry);
+            new WorldPosition(1.4, 0), new WorldPosition(2.4, 0)), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, 0.5), 0.3, geometry);
         WorldSceneState scene = new WorldSceneState(new HunterState(new WorldPosition(0, 0), 1, 0.4),
             creature, unit, geometry);
         assertEquals(TacticalEntryResult.Outcome.NO_VALID_PLACEMENT, scene.update(0, 0, 0, false));
         assertEquals(SceneMode.EXPLORATION, scene.getMode());
         assertNull(scene.getPlacement());
         assertEquals(new WorldPosition(0, 0), scene.getHunterPosition());
-        assertEquals(new WorldPosition(3, 0), scene.getCreaturePosition());
+        assertEquals(new WorldPosition(1.4, 0), scene.getCreaturePosition());
         assertTrue(scene.isCreatureAlerted());
         assertEquals(new WorldPosition(0, 0), scene.getLastSeenHunterPosition());
         assertNull(scene.update(1, 0, 2, false));
@@ -88,7 +90,7 @@ class WorldSceneStateTest {
                 new WorldPosition(Math.nextUp(3.0), 0))) {
                 WorldSceneState scene = detectionScene(hunter, new TacticalGrid(0, 0, cellSize), WorldGeometry.empty());
                 boolean onBoundary = hunter.getX() == 3.0;
-                assertEquals(onBoundary ? TacticalEntryResult.Outcome.SUCCESS : null, scene.update(0, 0, 0, false));
+                assertNull(scene.update(0, 0, 0, false));
                 assertEquals(onBoundary, scene.isCreatureAlerted());
             }
             WorldGeometry wall = new WorldGeometry(Arrays.asList(new StaticAabb(1, -1, 0.1, 2)));
@@ -96,19 +98,68 @@ class WorldSceneStateTest {
             assertNull(blocked.update(0, 0, 0, false));
             assertFalse(blocked.isCreatureAlerted());
             assertEquals(SceneMode.EXPLORATION, blocked.getMode());
+
+            WorldSceneState engaged = detectionScene(new WorldPosition(1.5, 0),
+                new TacticalGrid(0, 0, cellSize), WorldGeometry.empty());
+            assertEquals(TacticalEntryResult.Outcome.SUCCESS, engaged.update(0, 0, 0, false));
+            WorldSceneState outside = detectionScene(new WorldPosition(Math.nextUp(1.5), 0),
+                new TacticalGrid(0, 0, cellSize), WorldGeometry.empty());
+            assertNull(outside.update(0, 0, 0, false));
+            assertTrue(outside.isCreatureAlerted());
+        }
+    }
+
+    @Test
+    void engagementIsInclusiveAtBodyContactAndRequiresBothActorsAlive() {
+        WorldGeometry geometry = WorldGeometry.empty();
+        WorldPosition center = new WorldPosition(.5, .5);
+        TacticalGrid unit = new TacticalGrid(0, 0, 1);
+        CreaturePatrolState creature = new CreaturePatrolState(Arrays.asList(center, center.translate(0, 1)),
+            new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, .5), .25, geometry);
+        HunterState tangent = new HunterState(new WorldPosition(1.25, .5), 5, .5);
+        WorldSceneState contact = new WorldSceneState(tangent, creature, unit, geometry);
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, contact.update(0, 0, 0, false));
+
+        HunterState overlapping = new HunterState(new WorldPosition(1.125, .5), 5, .5);
+        WorldSceneState overlap = new WorldSceneState(overlapping, creature, unit, geometry);
+        assertNull(overlap.update(0, 0, 0, false));
+        assertTrue(overlap.isCreatureAlerted());
+
+        WorldSceneState deadHunter = new WorldSceneState(tangent.withDamage(4), creature, unit, geometry);
+        WorldSceneState deadCreature = new WorldSceneState(tangent, creature.withDamage(2), unit, geometry);
+        for (WorldSceneState scene : Arrays.asList(deadHunter, deadCreature)) {
+            assertNull(scene.update(0, 0, .01, false));
+            assertFalse(scene.isCreatureAlerted());
+            assertEquals(SceneMode.EXPLORATION, scene.getMode());
+        }
+    }
+
+    @Test
+    void creatureProfilesUseTheirOwnEngagementRangeWithTheSameDetectionRadius() {
+        WorldPosition hunter = new WorldPosition(2.5, .5);
+        WorldPosition creature = new WorldPosition(.5, .5);
+        WorldGeometry empty = WorldGeometry.empty();
+        TacticalGrid unit = new TacticalGrid(0, 0, 1);
+        for (double engagement : new double[] {1.5, 2.0}) {
+            WorldSceneState scene = new WorldSceneState(new HunterState(hunter, 5, .4),
+                new CreaturePatrolState(Arrays.asList(creature, creature.translate(0, 1)),
+                    new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, engagement, .5), .3, empty), unit, empty);
+            assertEquals(engagement == 2.0 ? TacticalEntryResult.Outcome.SUCCESS : null,
+                scene.update(0, 0, 0, false));
+            assertEquals(CreaturePatrolState.Behavior.CHASE, scene.getCreatureBehavior());
         }
     }
 
     private static WorldSceneState demoScene(TacticalGrid grid, WorldGeometry geometry) {
         return new WorldSceneState(new HunterState(new WorldPosition(0, 0), 5, 0.4),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(5, 0), new WorldPosition(5, 1)),
-                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry), grid, geometry);
+                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, 0.5), 0.3, geometry), grid, geometry);
     }
 
     private static WorldSceneState detectionScene(WorldPosition hunter, TacticalGrid grid, WorldGeometry geometry) {
         return new WorldSceneState(new HunterState(hunter, 5, 0.4),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(0, 0), new WorldPosition(0, 1)),
-                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 0.5), 0.3, geometry), grid, geometry);
+                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, 0.5), 0.3, geometry), grid, geometry);
     }
 
     @Test
@@ -156,12 +207,12 @@ class WorldSceneStateTest {
     }
 
     @Test
-    void failedDetectionIsNotRetriedAutomaticallyButManualRequestCanSucceedLater() {
+    void failedEngagementIsNotRetriedAutomaticallyButManualRequestCanSucceedLater() {
         WorldGeometry geometry = new WorldGeometry(blockedCentersExcept(new CellCoordinates(0, 0)));
         CreaturePatrolState creature = creature(new WorldPosition(0.2, 0.2), 10, geometry);
-        WorldSceneState scene = scene(new WorldPosition(0.2, 0.2), creature, geometry);
+        WorldSceneState scene = scene(new WorldPosition(0.35, 0.2), creature, geometry);
         assertEquals(TacticalEntryResult.Outcome.NO_VALID_PLACEMENT, scene.update(1, 0, 0.1, false));
-        assertEquals(new WorldPosition(0.3, 0.2).getX(), scene.getHunterPosition().getX(), 1e-12);
+        assertEquals(0.45, scene.getHunterPosition().getX(), 1e-12);
         assertEquals(scene.getHunterPosition(), scene.getLastSeenHunterPosition());
         assertTrue(scene.isCreatureAlerted());
         assertNull(scene.update(1, 0, 4.7, false));
@@ -232,7 +283,7 @@ class WorldSceneStateTest {
     void constructorCopiesCurrentPatrolPhaseAndAlertState() {
         WorldGeometry geometry = WorldGeometry.empty();
         CreaturePatrolState creature = new CreaturePatrolState(Arrays.asList(
-            new WorldPosition(0, 0), new WorldPosition(1, 0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 0.1, 0.5), 0.05, geometry);
+            new WorldPosition(0, 0), new WorldPosition(1, 0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 0.1, 0.075, 0.5), 0.05, geometry);
         creature.advancePatrol(1.75); // Разворот у второго waypoint, половина паузы осталась.
         WorldSceneState scene = scene(new WorldPosition(8, 0), creature, geometry);
         assertEquals(creature.getPosition(), scene.getCreaturePosition());
@@ -284,6 +335,6 @@ class WorldSceneStateTest {
     }
 
     private CreaturePatrolState creature(WorldPosition from, double detection, WorldGeometry geometry) {
-        return new CreaturePatrolState(Arrays.asList(from, from.translate(0.1, 0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, detection, 0.5), 0.05, geometry);
+        return new CreaturePatrolState(Arrays.asList(from, from.translate(0.1, 0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, detection, detection / 2, 0.5), 0.05, geometry);
     }
 }

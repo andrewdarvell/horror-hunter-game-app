@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CreatureExitLifecycleTest {
     CreaturePatrolState creature(WorldGeometry g) {
-        return new CreaturePatrolState(Arrays.asList(new WorldPosition(0,0),new WorldPosition(2,0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .1,g);
+        return new CreaturePatrolState(Arrays.asList(new WorldPosition(0,0),new WorldPosition(2,0)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, 1.5, .5), .1,g);
     }
     @Test void deadAndPureDetection() {
         CreaturePatrolState c=creature(WorldGeometry.empty());
@@ -16,6 +16,16 @@ class CreatureExitLifecycleTest {
         c.advancePatrol(100);assertFalse(c.checkDetection(new WorldPosition(0,0)));
         assertSame(position,c.getPosition());assertEquals(.5,c.getWaitRemaining());
         assertThrows(IllegalArgumentException.class,()->creature(WorldGeometry.empty()).withDamage(2).advancePatrol(-1));
+    }
+    @Test void defeatedHunterBreaksSightWithoutReplacingMemory() {
+        CreaturePatrolState creature = creature(WorldGeometry.empty());
+        WorldPosition lastSeen = new WorldPosition(1, 0);
+        assertTrue(creature.observeHunter(lastSeen));
+        assertFalse(creature.observeHunter(new WorldPosition(2, 0), false));
+        assertEquals(CreaturePatrolState.Behavior.SEARCH, creature.getBehavior());
+        assertEquals(2, creature.getSearchRemaining());
+        assertSame(lastSeen, creature.getLastSeenHunterPosition());
+        assertTrue(creature.isAlerted());
     }
     @Test void patrolResumesOrSafelyStopsAfterSnap() {
         CreaturePatrolState c=creature(WorldGeometry.empty());c.advancePatrol(.25);

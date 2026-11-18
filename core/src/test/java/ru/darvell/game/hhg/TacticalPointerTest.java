@@ -84,7 +84,7 @@ class TacticalPointerTest {
     WorldSceneState scene() {
         return new WorldSceneState(new HunterState(new WorldPosition(.5,.5),1,.4),
             new CreaturePatrolState(Arrays.asList(new WorldPosition(5.5,.5),new WorldPosition(5.5,1.5)),
-                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3,WorldGeometry.empty()),grid,WorldGeometry.empty());
+                new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, .5), .3,WorldGeometry.empty()),grid,WorldGeometry.empty());
     }
     int[] target(int x, int y) {
         Vector3 v = viewport.project(new Vector3(x+.5f,y+.5f,0));
@@ -123,7 +123,7 @@ class TacticalPointerTest {
         WorldPosition creature = new WorldPosition(5.5, .5);
         WorldGeometry geometry = WorldGeometry.empty();
         WorldSceneState scene = new WorldSceneState(new HunterState(hunter, 1, .4),
-            new CreaturePatrolState(Arrays.asList(creature, creature.translate(0, 1)), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3, geometry),
+            new CreaturePatrolState(Arrays.asList(creature, creature.translate(0, 1)), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, .5), .3, geometry),
             grid, geometry);
         FirstScreen screen = screen(scene);
         screen.show();

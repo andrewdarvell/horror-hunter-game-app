@@ -36,6 +36,36 @@ class TacticalEntryPlannerTest {
     }
 
     @Test
+    void snapFiltersOverlappingPairsBeforeRankingAndAllowsExactTouch() {
+        TacticalGrid small = new TacticalGrid(0, 0, .5);
+        WorldGeometry empty = WorldGeometry.empty();
+        WorldPosition hunter = new WorldPosition(.05, .25);
+        WorldPosition creature = new WorldPosition(.95, .25);
+        TacticalEntryResult separated = planner.plan(hunter, .4, creature, .3, small, empty);
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, separated.getOutcome());
+        assertNotEquals(small.worldToCell(hunter).equals(separated.getPlacement().getHunterCell()),
+            small.worldToCell(creature).equals(separated.getPlacement().getCreatureCell()));
+        assertTrue(Math.hypot(separated.getHunterCenter().getX() - separated.getCreatureCenter().getX(),
+            separated.getHunterCenter().getY() - separated.getCreatureCenter().getY()) >= .7);
+
+        TacticalEntryResult tangent = planner.plan(hunter, .25, creature, .25, small, empty);
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, tangent.getOutcome());
+        assertEquals(small.worldToCell(hunter), tangent.getPlacement().getHunterCell());
+        assertEquals(small.worldToCell(creature), tangent.getPlacement().getCreatureCell());
+    }
+
+    @Test
+    void overflowInWorldUnitsDoesNotHideOverlappingCenters() {
+        TacticalGrid huge = new TacticalGrid(0, 0, 1e308);
+        WorldPosition hunter = huge.cellToWorldCenter(new CellCoordinates(-2, 0));
+        WorldPosition creature = huge.cellToWorldCenter(new CellCoordinates(0, 0));
+        TacticalEntryResult result = planner.plan(hunter, 1.1e308, creature, 1.1e308, huge, WorldGeometry.empty());
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, result.getOutcome());
+        assertTrue(Math.hypot(result.getHunterCenter().getX() / 2 - result.getCreatureCenter().getX() / 2,
+            result.getHunterCenter().getY() / 2 - result.getCreatureCenter().getY() / 2) >= 1.1e308);
+    }
+
+    @Test
     void unitGridChecksBlockedCentersFullPathAndEachDemoRadius() {
         TacticalGrid unit = new TacticalGrid(0, 0, 1);
         CellCoordinates target = new CellCoordinates(0, 0);
@@ -159,10 +189,10 @@ class TacticalEntryPlannerTest {
         assertTrue(TacticalEntryPlanner.compare(h, c, otherH, otherC) < 0);
         assertTrue(TacticalEntryPlanner.compare(otherH, otherC, h, c) > 0);
         // Общие списки допускают перекрёстные пары: минимум должен включать выбранного охотника.
-        TacticalEntryResult a = TacticalEntryPlanner.select(hs, cs);
+        TacticalEntryResult a = TacticalEntryPlanner.select(hs, cs, .4, .3);
         Collections.reverse(hs);
         Collections.reverse(cs);
-        TacticalEntryResult b = TacticalEntryPlanner.select(hs, cs);
+        TacticalEntryResult b = TacticalEntryPlanner.select(hs, cs, .4, .3);
         assertEquals(h.cell, a.getPlacement().getHunterCell());
         assertEquals(a.getPlacement().getHunterCell(), b.getPlacement().getHunterCell());
         assertEquals(a.getPlacement().getCreatureCell(), b.getPlacement().getCreatureCell());

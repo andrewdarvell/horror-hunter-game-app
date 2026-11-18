@@ -6,6 +6,7 @@ import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState.Behavior;
 import ru.darvell.game.hhg.domain.actor.HunterState;
 import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
+import ru.darvell.game.hhg.domain.tactical.PrototypeBiteState.Phase;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalEntryResult.Outcome;
 import ru.darvell.game.hhg.domain.tactical.TacticalExitResult;
@@ -14,10 +15,8 @@ import ru.darvell.game.hhg.domain.world.StaticAabb;
 import ru.darvell.game.hhg.domain.world.WorldGeometry;
 import ru.darvell.game.hhg.domain.world.WorldPosition;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -25,16 +24,57 @@ class CreaturePursuitTest {
     private static final double EPSILON = 1e-10;
     private static final WorldGeometry EMPTY = WorldGeometry.empty();
 
+
     @Test
-    void patrolCreatesContactWithStationaryHunterAndStopsAtEntry() {
-        WorldSceneState scene = scene(p(0, 4), p(0, 0), p(0, 2), EMPTY);
-        assertNull(scene.update(0, 0, .99, false));
-        assertEquals(Behavior.PATROL, scene.getCreatureBehavior());
-        assertEquals(.98, scene.getCreaturePosition().getY(), EPSILON);
-        assertEquals(Outcome.SUCCESS, scene.update(0, 0, 5, false));
-        assertEquals(1.0, scene.getCreatureBeforeEntry().getY(), EPSILON);
-        assertEquals(p(0, 4), scene.getLastSeenHunterPosition());
+    void visibleChaseStartsBeforeEngagementAndCreatureMovementCreatesEntry() {
+        WorldSceneState scene = scene(p(2.825, .5), p(.5, .5), p(.5, 1.5), EMPTY);
+        assertNull(scene.update(0, 0, 0, false));
         assertEquals(Behavior.CHASE, scene.getCreatureBehavior());
+        assertEquals(p(.5, .5), scene.getCreaturePosition());
+        assertNull(scene.update(0, 0, .20, false));
+        assertEquals(1.30, scene.getCreaturePosition().getX(), EPSILON);
+        assertEquals(SceneMode.EXPLORATION, scene.getMode());
+        assertEquals(Outcome.SUCCESS, scene.update(0, 0, .01, false));
+        assertEquals(1.34, scene.getCreatureBeforeEntry().getX(), EPSILON);
+        assertEquals(p(2.825, .5), scene.getLastSeenHunterPosition());
+    }
+
+    @Test
+    void hunterMovementCreatesEntryBeforeCreatureMoves() {
+        WorldSceneState scene = scene(p(2.025, .5), p(.5, .5), p(.5, 1.5), EMPTY);
+        assertEquals(Outcome.SUCCESS, scene.update(-1, 0, .01, false));
+        assertEquals(p(.5, .5), scene.getCreatureBeforeEntry());
+        assertEquals(1.975, scene.getHunterBeforeEntry().getX(), EPSILON);
+        assertEquals(scene.getHunterBeforeEntry(), scene.getLastSeenHunterPosition());
+    }
+
+    @Test
+    void runningOrCoverCanBreakSightBeforeEngagement() {
+        WorldSceneState running = scene(p(2.825, .5), p(.5, .5), p(.5, 1.5), EMPTY);
+        assertNull(running.update(1, 0, .63, false));
+        assertEquals(Behavior.CHASE, running.getCreatureBehavior());
+        WorldPosition before = running.getCreaturePosition();
+        assertNull(running.update(1, 0, .01, false));
+        // Ход H разрывает LOS по дальности, C делает ход SEARCH и снова видит H.
+        assertEquals(.03, distance(before, running.getCreaturePosition()), EPSILON);
+        assertEquals(Behavior.CHASE, running.getCreatureBehavior());
+        assertNull(running.update(1, 0, .01, false));
+        WorldPosition lastSeen = running.getLastSeenHunterPosition();
+        assertNull(running.update(1, 0, .01, false));
+        assertEquals(Behavior.SEARCH, running.getCreatureBehavior());
+        assertEquals(lastSeen, running.getLastSeenHunterPosition());
+
+        WorldGeometry wall = new WorldGeometry(Collections.singletonList(new StaticAabb(2, -1, 1, 2)));
+        CreaturePatrolState searcher = creature(p(1, 0), p(1, 2), wall);
+        assertTrue(searcher.observeHunter(p(1, 2)));
+        WorldSceneState hidden = new WorldSceneState(new HunterState(p(4, 0), 5, .4), searcher,
+            new TacticalGrid(0, 0, 1), wall);
+        assertNull(hidden.update(0, 0, .67, false));
+        assertEquals(p(1, 2), hidden.getCreaturePosition());
+        assertEquals(Behavior.SEARCH, hidden.getCreatureBehavior());
+        assertNull(hidden.update(0, 0, 1.33, false));
+        assertEquals(Behavior.RETURN, hidden.getCreatureBehavior());
+        assertEquals(p(1, 2), hidden.getLastSeenHunterPosition());
     }
 
     @Test
@@ -62,68 +102,74 @@ class CreaturePursuitTest {
         assertEquals(4, scene.getHunterHealth());
     }
 
+
     @Test
-    void stationaryHunterAfterBreakoutIsDetectedOnStep34() {
-        WorldSceneState scene = escaped(EMPTY);
+    void alreadyVisibleHunterAfterWoundedEscapeReengagesOnStep38() {
+        WorldSceneState scene = visibleEscape();
         TacticalAttackResult breakout = scene.getLastResolution();
         Object bite = scene.getBiteState();
-        assertNull(scene.update(0, 0, .33, false));
-        assertEquals(Behavior.SEARCH, scene.getCreatureBehavior());
-        assertEquals(1.49, scene.getCreaturePosition().getX(), EPSILON);
-        assertEquals(Outcome.SUCCESS, scene.update(0, 0, .01, false));
-        assertEquals(1.52, scene.getCreatureBeforeEntry().getX(), EPSILON);
-        assertEquals(p(4.5, .5), scene.getLastSeenHunterPosition());
-        assertEquals(SceneMode.TACTICAL, scene.getMode());
+        assertNull(scene.update(0, 0, 0, false));
+        assertEquals(p(1.5, .5), scene.getLastSeenHunterPosition());
+        assertNull(scene.update(0, 0, .01, false));
         assertEquals(Behavior.CHASE, scene.getCreatureBehavior());
+        assertEquals(p(3.5, .5), scene.getLastSeenHunterPosition());
+        assertNull(scene.update(0, 0, .36, false));
+        assertEquals(1.52, distance(scene.getHunterPosition(), scene.getCreaturePosition()), EPSILON);
+        assertEquals(Outcome.SUCCESS, scene.update(0, 0, .01, false));
+        assertEquals(1.48, distance(scene.getHunterBeforeEntry(), scene.getCreatureBeforeEntry()), EPSILON);
+        assertEquals(SceneMode.TACTICAL, scene.getMode());
         assertSame(breakout, scene.getLastResolution());
         assertSame(bite, scene.getBiteState());
         assertEquals(2, scene.getTacticalTimeUnits());
+        assertEquals(3, scene.getHunterHealth());
+        assertEquals(2, scene.getCreatureHealth());
     }
 
     @Test
-    void deniedPlacementAfterBreakoutStartsChaseWithoutRetryOrWallPenetration() {
-        WorldGeometry geometry = new WorldGeometry(Arrays.asList(
-            new StaticAabb(4, 1.2, .55, 1.8), new StaticAabb(5.45, 1.2, 1.55, 1.8)));
-        WorldSceneState scene = escaped(geometry);
-        assertNull(scene.update(1, 0, .10, false));
-        assertNull(scene.update(0, 1, .16, false));
-        assertNull(scene.update(0, 0, .27, false));
-        assertEquals(Outcome.NO_VALID_PLACEMENT, scene.update(0, 0, .01, false));
-        assertEquals(2.12, scene.getCreaturePosition().getX(), EPSILON);
-        assertEquals(Behavior.CHASE, scene.getCreatureBehavior());
-        assertEquals(SceneMode.EXPLORATION, scene.getMode());
-        WorldPosition start = scene.getCreaturePosition();
-        assertNull(scene.update(0, 0, .01, false));
-        WorldPosition next = scene.getCreaturePosition();
-        assertEquals(.04, distance(start, next), EPSILON);
-        for (int step = 0; step < 80; step++) {
-            WorldPosition before = scene.getCreaturePosition();
-            assertNull(scene.update(0, 0, .01, false));
-            assertTrue(geometry.isCirclePathValid(before, scene.getCreaturePosition(), .3));
-        }
-        WorldPosition blocked = scene.getCreaturePosition();
-        assertNull(scene.update(0, 0, 1, false));
-        assertEquals(blocked, scene.getCreaturePosition());
-        assertTrue(geometry.hasLineOfSight(blocked, scene.getHunterPosition()));
-        assertEquals(Behavior.CHASE, scene.getCreatureBehavior());
+    void runningFirstAfterVisibleEscapeKeepsOldMemoryAndStartsSearch() {
+        WorldSceneState scene = visibleEscape();
+        assertNull(scene.update(1, 0, .01, false));
+        assertEquals(3.55, scene.getHunterPosition().getX(), EPSILON);
+        assertEquals(Behavior.SEARCH, scene.getCreatureBehavior());
+        assertEquals(p(1.5, .5), scene.getLastSeenHunterPosition());
+        assertEquals(1.99, scene.getCreatureSearchRemaining(), EPSILON);
     }
 
+
     @Test
-    void longUpdateCanRecordNewContactAfterObservedBreak() {
-        List<StaticAabb> obstacles = new ArrayList<>();
-        obstacles.add(new StaticAabb(.95, .13, .1, .07));
-        for (int x = 1; x <= 3; x++) {
-            for (int y = -2; y <= 1; y++) {
-                obstacles.add(new StaticAabb(x + .45, y + .45, .1, .1));
-            }
-        }
-        WorldSceneState scene = scene(p(2, -.05), p(0, 0), p(0, -1), new WorldGeometry(obstacles));
-        assertEquals(Outcome.NO_VALID_PLACEMENT, scene.update(0, 0, 0, false));
-        assertEquals(Outcome.NO_VALID_PLACEMENT, scene.update(0, 1, .16, false));
-        assertEquals(.75, scene.getHunterPosition().getY(), EPSILON);
-        assertTrue(scene.getLastSeenHunterPosition().getY() > .2);
-        assertEquals(SceneMode.EXPLORATION, scene.getMode());
+    void sightCanBeBlockedAtCloseRangeAndChaseCanStopAtAFreeRay() {
+        WorldGeometry touchingRay = new WorldGeometry(Collections.singletonList(new StaticAabb(.85, .5, .1, .25)));
+        WorldSceneState blockedSight = scene(p(1.5, .5), p(.5, .5), p(.5, 1.5), touchingRay);
+        assertNull(blockedSight.update(0, 0, 0, false));
+        assertFalse(blockedSight.isCreatureAlerted());
+
+        WorldGeometry corner = new WorldGeometry(Collections.singletonList(new StaticAabb(1.25, .65, .5, .85)));
+        WorldSceneState visible = scene(p(2.825, .5), p(.5, .5), p(.5, 1.5), corner);
+        assertNull(visible.update(0, 0, 1, false));
+        assertEquals(.9901923789, visible.getCreaturePosition().getX(), EPSILON);
+        assertTrue(corner.hasLineOfSight(visible.getCreaturePosition(), visible.getHunterPosition()));
+        assertEquals(Behavior.CHASE, visible.getCreatureBehavior());
+        assertEquals(SceneMode.EXPLORATION, visible.getMode());
+    }
+
+
+    @Test
+    void failedPlacementWaitsForObservedBreakBetweenTheTwoMoves() {
+        WorldGeometry corridor = new WorldGeometry(Arrays.asList(
+            new StaticAabb(-20, -10, 40, 10), new StaticAabb(-20, 1.1, 40, 8.9)));
+        WorldSceneState scene = new WorldSceneState(new HunterState(p(1.925, .5), 5, .4),
+            creature(p(.5, .5), p(1, .5), corridor), new TacticalGrid(0, 0, 4), corridor);
+        assertEquals(Outcome.NO_VALID_PLACEMENT, scene.update(0, 0, 0, true));
+        assertEquals(p(1.925, .5), scene.getHunterPosition());
+        assertEquals(p(.5, .5), scene.getCreaturePosition());
         assertNull(scene.update(0, 0, 0, false));
+        for (int step = 0; step < 3; step++) assertNull(scene.update(0, 0, .01, false));
+        assertNull(scene.update(1, 0, .15, false));
+        assertEquals(1.455, distance(scene.getHunterPosition(), scene.getCreaturePosition()), EPSILON);
+        assertEquals(Outcome.NO_VALID_PLACEMENT, scene.update(1, 0, .01, false));
+        assertEquals(1.465, distance(scene.getHunterPosition(), scene.getCreaturePosition()), EPSILON);
+        assertEquals(Behavior.CHASE, scene.getCreatureBehavior());
+        assertNull(scene.update(0, 0, .01, false));
     }
 
     @Test
@@ -153,8 +199,9 @@ class CreaturePursuitTest {
         assertNull(scene.update(0, 0, 1.78, false));
         assertEquals(Behavior.SEARCH, scene.getCreatureBehavior());
         assertEquals(.01, scene.getCreatureSearchRemaining(), EPSILON);
-        assertEquals(Outcome.SUCCESS, scene.update(-1, 0, .01, false));
+        assertNull(scene.update(-1, 0, .01, false));
         assertEquals(Behavior.CHASE, scene.getCreatureBehavior());
+        assertEquals(0, scene.getCreatureSearchRemaining());
     }
 
     @Test
@@ -199,9 +246,51 @@ class CreaturePursuitTest {
         assertEquals(p(-.41, 0), thin.getHunterPosition());
     }
 
+    @Test
+    void engagementSnapshotIsIndependentOfFrameSplitting() {
+        for (int updates : new int[] {1, 21, 42}) {
+            WorldSceneState scene = scene(p(2.825, .5), p(.5, .5), p(.5, 1.5), EMPTY);
+            for (int frame = 1; frame < updates; frame++) {
+                assertNull(scene.update(0, 0, .21 / updates, false));
+            }
+            assertEquals(Outcome.SUCCESS, scene.update(0, 0, .21 / updates, false));
+            assertEquals(1.34, scene.getCreatureBeforeEntry().getX(), EPSILON);
+            assertEquals(p(2.825, .5), scene.getHunterBeforeEntry());
+        }
+    }
+
+    @Test
+    void sameObservationCanCrossBothThresholdsButAnUnsampledPassDoesNot() {
+        CreaturePatrolState creature = creature(p(.5, .5), p(.5, 1.5), EMPTY);
+        TacticalGrid grid = new TacticalGrid(0, 0, 1);
+        WorldSceneState simultaneous = new WorldSceneState(new HunterState(p(3.6, .5), 200, .4), creature, grid, EMPTY);
+        assertEquals(Outcome.SUCCESS, simultaneous.update(-1, 0, .01, false));
+        assertEquals(1.6, simultaneous.getHunterBeforeEntry().getX(), EPSILON);
+        assertEquals(simultaneous.getHunterBeforeEntry(), simultaneous.getLastSeenHunterPosition());
+        assertEquals(Behavior.CHASE, simultaneous.getCreatureBehavior());
+        assertEquals(p(.5, .5), simultaneous.getCreatureBeforeEntry());
+
+        WorldSceneState unsampled = new WorldSceneState(new HunterState(p(-4, 1.5), 900, .4), creature, grid, EMPTY);
+        assertNull(unsampled.update(1, 0, .01, false));
+        assertEquals(p(5, 1.5), unsampled.getHunterPosition());
+        assertFalse(unsampled.isCreatureAlerted());
+    }
+
+    private static WorldSceneState visibleEscape() {
+        WorldSceneState scene = scene(p(1.5, .5), p(.5, .5), p(.5, 1.5), EMPTY);
+        assertEquals(Outcome.SUCCESS, scene.update(0, 0, 0, false));
+        TacticalAttackResult result = scene.tryBreakoutTo(new CellCoordinates(3, 0));
+        assertEquals(TacticalAttackResult.Outcome.ESCAPED, result.getOutcome());
+        assertEquals(2, result.getDuration());
+        assertEquals(Phase.RECOVERING, scene.getBiteState().getPhase());
+        assertEquals(2, scene.getBiteState().getRemainingUnits());
+        return scene;
+    }
+
     private static WorldSceneState escaped(WorldGeometry geometry) {
         WorldSceneState scene = scene(p(2.5, .5), p(.5, .5), p(.5, 1.5), geometry);
-        assertEquals(Outcome.SUCCESS, scene.update(0, 0, 0, false));
+        assertNull(scene.update(0, 0, 0, false));
+        assertEquals(Outcome.SUCCESS, scene.enterTactical());
         assertEquals(TacticalAttackResult.Outcome.ESCAPED, scene.tryBreakoutTo(new CellCoordinates(4, 0)).getOutcome());
         return scene;
     }
@@ -213,7 +302,7 @@ class CreaturePursuitTest {
     }
 
     private static CreaturePatrolState creature(WorldPosition position, WorldPosition endpoint, WorldGeometry geometry) {
-        return new CreaturePatrolState(Arrays.asList(position, endpoint), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3, geometry);
+        return new CreaturePatrolState(Arrays.asList(position, endpoint), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, .5), .3, geometry);
     }
 
     private static WorldPosition p(double x, double y) { return new WorldPosition(x, y); }

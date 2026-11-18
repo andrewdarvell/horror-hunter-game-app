@@ -27,14 +27,18 @@ public final class TacticalBreakoutSmoke extends ApplicationAdapter {
         TacticalGrid grid=new TacticalGrid(0,0,1);
         int h=scenario==0?2:scenario==3?0:1, e=scenario==3?-3:0;
         scene=new WorldSceneState(new HunterState(new WorldPosition(h+.5,.5),1,.4),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(e+.5,.5),new WorldPosition(e+.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, .5), .3,g),grid,g);
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(e+.5,.5),new WorldPosition(e+.5,1.5)),
+                new CreatureBehaviorConfig(1, 4, 3, 2, 2, 3, scenario == 7 ? 2.0 : 1.5, .5), .3,g),grid,g);
         scene.enterTactical();
         if(scenario==2 || scenario==8) for(int i=1;i<=(scenario==2?12:11);i++) scene.tryMoveHunterTo(new CellCoordinates(1,i%2));
         if(scenario==5) for(int i=1;i<=3;i++) scene.tryMoveHunterTo(new CellCoordinates(1,i%2));
         if(scenario==6) { scene.tryAttackCreature(new CellCoordinates(0,0)); scene.tryAttackCreature(new CellCoordinates(0,0)); scene.enterTactical(); }
-        if(scenario==7) scene.tryBreakoutTo(new CellCoordinates(3,0));
-        target=new CellCoordinates(scenario==3?2:scenario==4||scenario==6?3:scenario==5||scenario==8?-1:scenario==7?5:4,
-            scenario==3?2:scenario==5||scenario==8?1:0);
+        if (scenario == 7 && scene.tryBreakoutTo(new CellCoordinates(0, 2)).getOutcome()
+            != TacticalAttackResult.Outcome.MOVED_STILL_TACTICAL) {
+            throw new AssertionError("engagement at the first endpoint");
+        }
+        target=new CellCoordinates(scenario==3?2:scenario==4||scenario==6?3:scenario==5||scenario==8?-1:scenario==7?0:4,
+            scenario==3?2:scenario==5||scenario==8?1:scenario==7?4:0);
         viewport=new FitViewport(20,15,new OrthographicCamera());
         screen=new FirstScreen(scene,grid,g,viewport,new ShapeRenderer());screen.show();
         screen.resize(Gdx.graphics.getWidth(),Gdx.graphics.getHeight()); stage=0; settle=0;
@@ -51,7 +55,11 @@ public final class TacticalBreakoutSmoke extends ApplicationAdapter {
         try {
             screen.render(1f/60);if(++frames>2000) throw new AssertionError("timeout");
             if(screen.isBusy() || settle++<10) return;
-            if(stage==0) { button(screen.breakoutButtonBounds()); stage++; return; }
+            if(stage==0) {
+                boolean portrait = Gdx.graphics.getHeight() > Gdx.graphics.getWidth();
+                if (portrait != (scenario % 2 != 0)) throw new AssertionError("window orientation");
+                button(screen.breakoutButtonBounds()); stage++; return;
+            }
             if(stage==1) {
                 Vector3 p=viewport.project(new Vector3(target.getX()+.5f,target.getY()+.5f,0));
                 click(Math.round(p.x),Gdx.graphics.getHeight()-Math.round(p.y));stage++;return;
@@ -61,7 +69,7 @@ public final class TacticalBreakoutSmoke extends ApplicationAdapter {
             if(scenario==3) { if(scene.getTacticalTimeUnits()!=0) throw new AssertionError("geometry mutation"); }
             else {
                 TacticalAttackResult.Outcome expected=scenario==2||scenario==8?TacticalAttackResult.Outcome.INTERRUPTED
-                    :scenario==4||scenario==5?TacticalAttackResult.Outcome.MOVED_STILL_TACTICAL:TacticalAttackResult.Outcome.ESCAPED;
+                    :scenario==5?TacticalAttackResult.Outcome.MOVED_STILL_TACTICAL:TacticalAttackResult.Outcome.ESCAPED;
                 if(r.getOutcome()!=expected) throw new AssertionError("F"+scenario+" "+r.getOutcome());
                 if((scenario==0&&scene.getHunterHealth()!=4)||(scenario==1&&scene.getHunterHealth()!=3)
                     ||(scenario==2&&r.getDuration()!=1)||(scenario==8&&r.getDuration()!=2)) throw new AssertionError("timing/HP");

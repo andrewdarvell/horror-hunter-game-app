@@ -34,8 +34,9 @@ public final class WorldSceneState {
     private final TacticalGrid grid;
     private final WorldGeometry geometry;
     private final TacticalEntryPlanner planner = new TacticalEntryPlanner();
-    private boolean contactOnPreviousCheck;
-    private boolean initialContactChecked;
+    private boolean detectionOnPreviousCheck;
+    private boolean engagementOnPreviousCheck;
+    private boolean initialObservationDone;
     private double explorationRemainder;
     private double pendingDirectionX;
     private double pendingDirectionY;
@@ -77,9 +78,9 @@ public final class WorldSceneState {
         long steps = delta == 0.0 ? 0 : (long) stepCount;
 
         TacticalEntryResult.Outcome outcome = null;
-        if (!initialContactChecked) {
-            initialContactChecked = true;
-            if (observeContact()) {
+        if (!initialObservationDone) {
+            initialObservationDone = true;
+            if (observeEngagementEdge()) {
                 outcome = enterTactical();
                 manualEntry = false;
                 if (mode == SceneMode.TACTICAL) return outcome;
@@ -92,7 +93,7 @@ public final class WorldSceneState {
                 EXPLORATION_STEP_SECONDS, geometry, creature.isDefeated() ? null : creature.getPosition(),
                 creature.getRadius());
 
-            if (observeContact() || manualEntry) {
+            if (observeEngagementEdge() || manualEntry) {
                 outcome = enterTactical();
                 manualEntry = false;
                 if (mode == SceneMode.TACTICAL) return outcome;
@@ -100,7 +101,7 @@ public final class WorldSceneState {
 
             creature.advanceExploration(EXPLORATION_STEP_SECONDS,
                 hunter.isDefeated() ? null : hunter.getPosition(), hunter.getRadius());
-            if (observeContact()) {
+            if (observeEngagementEdge()) {
                 outcome = enterTactical();
                 if (mode == SceneMode.TACTICAL) return outcome;
             }
@@ -121,11 +122,21 @@ public final class WorldSceneState {
         return outcome;
     }
 
-    private boolean observeContact() {
-        boolean contact = creature.observeHunter(hunter.getPosition());
-        boolean newContact = contact && !contactOnPreviousCheck;
-        contactOnPreviousCheck = contact;
-        return newContact;
+    private boolean observeEngagementEdge() {
+        detectionOnPreviousCheck = creature.observeHunter(hunter.getPosition(), !hunter.isDefeated());
+        boolean engagement = canEngage(hunter, creature, detectionOnPreviousCheck);
+        boolean newEngagement = engagement && !engagementOnPreviousCheck;
+        engagementOnPreviousCheck = engagement;
+        return newEngagement;
+    }
+
+    private static boolean canEngage(HunterState h, CreaturePatrolState c, boolean detected) {
+        if (!detected) return false;
+        WorldPosition from = c.getPosition();
+        WorldPosition to = h.getPosition();
+        double distance = Math.hypot(to.getX() - from.getX(), to.getY() - from.getY());
+        return distance >= h.getRadius() + c.getRadius()
+            && distance <= c.getBehaviorConfig().getEngagementRange();
     }
 
     public TacticalEntryResult.Outcome enterTactical() {
@@ -147,7 +158,7 @@ public final class WorldSceneState {
             hunterBeforeEntry = hunter.getPosition();
             creatureBeforeEntry = creature.getPosition();
             explorationRemainder = 0.0;
-            initialContactChecked = true;
+            initialObservationDone = true;
             hunter = preparedHunter;
             creature = preparedCreature;
             placement = preparedPlacement;
@@ -160,21 +171,18 @@ public final class WorldSceneState {
     public TacticalExitResult exitTacticalAvailability() {
         if (mode != SceneMode.TACTICAL) return TacticalExitResult.NOT_TACTICAL;
         if (hunter.isDefeated()) return TacticalExitResult.HUNTER_DEFEATED;
-        if (hasThreat(hunter, creature, placement)) {
+        if (creature.canDetect(hunter.getPosition()) || canBite(hunter, creature, placement)) {
             return TacticalExitResult.ACTIVE_THREAT;
         }
         return TacticalExitResult.SUCCESS;
-    }
-
-    private boolean hasThreat(HunterState h, CreaturePatrolState c, TacticalPlacement p) {
-        return c.canDetect(h.getPosition()) || canBite(h, c, p);
     }
 
     public TacticalExitResult tryExitTactical() {
         TacticalExitResult result = exitTacticalAvailability();
         if (result == TacticalExitResult.SUCCESS) {
             placement = null;
-            contactOnPreviousCheck = false;
+            detectionOnPreviousCheck = false;
+            engagementOnPreviousCheck = false;
             mode = SceneMode.EXPLORATION;
         }
         return result;
@@ -199,7 +207,8 @@ public final class WorldSceneState {
             || !Double.isFinite(Math.hypot(center.getX() - hunter.getPosition().getX(),
                 center.getY() - hunter.getPosition().getY()))) return TacticalMoveResult.INVALID_INPUT;
         if (!geometry.isCirclePositionValid(center, hunter.getRadius())) return TacticalMoveResult.BLOCKED_CENTER;
-        if (!geometry.isCirclePathValid(hunter.getPosition(), center, hunter.getRadius())) {
+        if (!geometry.isCirclePathValid(hunter.getPosition(), center, hunter.getRadius(),
+            creature.isDefeated() ? null : creature.getPosition(), creature.getRadius())) {
             return TacticalMoveResult.BLOCKED_PATH;
         }
         TacticalPlacement preparedPlacement = creature.isDefeated()
@@ -355,7 +364,7 @@ public final class WorldSceneState {
         if (preparedCreature.isDefeated()) preparedPlacement = TacticalPlacement.hunterOnly(preparedPlacement.getHunterCell());
         long preparedTime = Math.addExact(tacticalTimeUnits, elapsed);
         SceneMode preparedMode = mode;
-        boolean preparedContact = contactOnPreviousCheck;
+        boolean detectedAtExit = false;
         Outcome outcome = attack ? (hit ? Outcome.HIT : Outcome.INTERRUPTED) : Outcome.MOVE;
         boolean exitAfterVictory = hit && !creature.isDefeated() && preparedCreature.isDefeated();
         boolean exitAfterBreakout = false;
@@ -363,14 +372,16 @@ public final class WorldSceneState {
             if (preparedHunter.isDefeated()) {
                 outcome = Outcome.INTERRUPTED;
             } else {
-                exitAfterBreakout = !hasThreat(preparedHunter, preparedCreature, preparedPlacement);
+                boolean endpointDetected = preparedCreature.canDetect(preparedHunter.getPosition());
+                exitAfterBreakout = !canEngage(preparedHunter, preparedCreature, endpointDetected)
+                    && !canBite(preparedHunter, preparedCreature, preparedPlacement);
+                detectedAtExit = exitAfterBreakout && endpointDetected;
                 outcome = exitAfterBreakout ? Outcome.ESCAPED : Outcome.MOVED_STILL_TACTICAL;
             }
         }
         if (exitAfterVictory || exitAfterBreakout) {
             preparedMode = SceneMode.EXPLORATION;
             preparedPlacement = null;
-            preparedContact = false;
             events.add(new Event(EventType.TACTICAL_EXITED, elapsed));
         }
         TacticalAttackResult result = new TacticalAttackResult(outcome,
@@ -386,7 +397,10 @@ public final class WorldSceneState {
             tacticalTimeUnits = preparedTime;
             lastResolution = result;
             mode = preparedMode;
-            contactOnPreviousCheck = preparedContact;
+            if (exitAfterVictory || exitAfterBreakout) {
+                detectionOnPreviousCheck = detectedAtExit;
+                engagementOnPreviousCheck = false;
+            }
         }
         return result;
     }

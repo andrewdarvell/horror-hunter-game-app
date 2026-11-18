@@ -12,7 +12,7 @@ class CombatHudTest extends TacticalPointerTest {
     WorldSceneState combat(int damage) {
         WorldGeometry g=WorldGeometry.empty();
         WorldSceneState s=new WorldSceneState(new HunterState(new WorldPosition(.5,.5),1,.4).withDamage(damage),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(1.5,.5),new WorldPosition(1.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, .01, .5), .3,g),grid,g);
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(1.5,.5),new WorldPosition(1.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, .01, .005, .5), .3,g),grid,g);
         s.enterTactical(); return s;
     }
     @Test void phaseWithoutSelectionPreviewAndBusyRemainFrozen() {

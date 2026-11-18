@@ -152,7 +152,12 @@ public final class CreaturePatrolState {
 
     /** Запоминает только подтверждённую зрением позицию. */
     public boolean observeHunter(WorldPosition hunterPosition) {
-        if (canDetect(hunterPosition)) {
+        return observeHunter(hunterPosition, true);
+    }
+
+    /** Поверженный охотник не обновляет last-seen. */
+    public boolean observeHunter(WorldPosition hunterPosition, boolean hunterAlive) {
+        if (hunterAlive && canDetect(hunterPosition)) {
             alerted = true;
             lastSeenHunterPosition = hunterPosition;
             behavior = Behavior.CHASE;

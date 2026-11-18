@@ -77,7 +77,7 @@ class CreatureReturnTest {
     }
 
     private static CreaturePatrolState creature(WorldGeometry geometry) {
-        return new CreaturePatrolState(Arrays.asList(p(0, 0), p(0, 4)), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, .5), .3, geometry);
+        return new CreaturePatrolState(Arrays.asList(p(0, 0), p(0, 4)), new CreatureBehaviorConfig(2, 4, 3, 2, 2, 3, 1.5, .5), .3, geometry);
     }
 
     private static WorldPosition p(double x, double y) { return new WorldPosition(x, y); }

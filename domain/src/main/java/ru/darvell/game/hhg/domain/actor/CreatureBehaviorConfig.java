@@ -8,15 +8,21 @@ public final class CreatureBehaviorConfig {
     private final double returnSpeed;
     private final double searchSeconds;
     private final double detectionRadius;
+    private final double engagementRange;
     private final double pauseSeconds;
 
     public CreatureBehaviorConfig(double patrolSpeed, double chaseSpeed, double searchSpeed, double returnSpeed,
-                                  double searchSeconds, double detectionRadius, double pauseSeconds) {
+                                  double searchSeconds, double detectionRadius, double engagementRange,
+                                  double pauseSeconds) {
         requirePositive(patrolSpeed, "Patrol speed");
         requirePositive(chaseSpeed, "Chase speed");
         requirePositive(searchSpeed, "Search speed");
         requirePositive(returnSpeed, "Return speed");
         requirePositive(detectionRadius, "Detection radius");
+        requirePositive(engagementRange, "Engagement range");
+        if (engagementRange >= detectionRadius) {
+            throw new IllegalArgumentException("Engagement range must be smaller than detection radius");
+        }
         requirePositive(pauseSeconds, "Waypoint pause");
         if (!Double.isFinite(searchSeconds) || searchSeconds < 0.0) {
             throw new IllegalArgumentException("Search duration must be finite and non-negative");
@@ -27,6 +33,7 @@ public final class CreatureBehaviorConfig {
         this.returnSpeed = returnSpeed;
         this.searchSeconds = searchSeconds;
         this.detectionRadius = detectionRadius;
+        this.engagementRange = engagementRange;
         this.pauseSeconds = pauseSeconds;
     }
 
@@ -36,6 +43,7 @@ public final class CreatureBehaviorConfig {
     public double getReturnSpeed() { return returnSpeed; }
     public double getSearchSeconds() { return searchSeconds; }
     public double getDetectionRadius() { return detectionRadius; }
+    public double getEngagementRange() { return engagementRange; }
     public double getPauseSeconds() { return pauseSeconds; }
 
     private static void requirePositive(double value, String name) {

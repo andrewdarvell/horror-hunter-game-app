@@ -30,7 +30,7 @@ public class AttackSmoke extends ApplicationAdapter {
         Field f=FirstScreen.class.getDeclaredField("scene"); f.setAccessible(true);
         WorldGeometry geometry=(WorldGeometry)field(screen,"worldGeometry");
         scene=new WorldSceneState(new HunterState(new WorldPosition(.5,.5),1,.4).withDamage(damage),
-            new CreaturePatrolState(Arrays.asList(new WorldPosition(1.5,.5),new WorldPosition(1.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, .01, .5), .3,geometry),
+            new CreaturePatrolState(Arrays.asList(new WorldPosition(1.5,.5),new WorldPosition(1.5,1.5)), new CreatureBehaviorConfig(1, 4, 3, 2, 2, .01, .005, .5), .3,geometry),
             new TacticalGrid(0,0,1),geometry);
         f.set(screen,scene); screen.show(); screen.resize(Gdx.graphics.getWidth(),Gdx.graphics.getHeight());
         screen.updateScene(0,0,0,true);
