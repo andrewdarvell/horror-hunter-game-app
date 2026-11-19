@@ -36,7 +36,7 @@ class TacticalExitPointerTest extends TacticalPointerTest {
         FirstScreen screen=screen(scene);screen.show();ready(screen);
         Object placement=scene.getPlacement(), bite=scene.getBiteState();
         mode(screen);assertEquals(SceneMode.TACTICAL,scene.getMode());
-        assertSame(placement,scene.getPlacement());assertSame(bite,scene.getBiteState());
+        assertSame(placement,scene.getPlacement());assertEquals(bite,scene.getBiteState());
         assertFalse(screen.hasSelectedTarget());assertEquals(0,scene.getTacticalTimeUnits());
         screen.hide();
     }

@@ -12,6 +12,9 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /** Чистые переходы между границами тактической симуляции. */
 public final class CombatTimeline {
@@ -43,21 +46,27 @@ public final class CombatTimeline {
         return advance(new TimelineState(state.getNow(), hunter, state.getOpponent(), state.getCommands()), events);
     }
 
-    private static TimelineResult advance(TimelineState state, List<TimelineEvent> events) {
-        while (true) {
-            if (isTerminal(state)) {
-                return new TimelineResult(state, Stop.TERMINAL, events, Collections.emptySet());
-            }
-            Set<TimelineAction> available = availableCommands(state);
-            if (!available.isEmpty()) {
-                return new TimelineResult(state, Stop.DECISION, events, available);
-            }
-            Long next = nextDeadline(state);
+    /** Правила снимка определяют ближайший срок, порядок пакета и право остановки. */
+    public static <S> S advanceToBoundary(S state, Predicate<S> atBoundary,
+                                          Function<S, Long> nextDeadline, BiFunction<S, Long, S> resolveBatch) {
+        while (!atBoundary.test(state)) {
+            Long next = nextDeadline.apply(state);
             if (next == null) {
-                return new TimelineResult(state, Stop.NO_PROGRESS, events, Collections.emptySet());
+                break;
             }
-            state = resolveBatch(state, next, events);
+            state = resolveBatch.apply(state, next);
         }
+        return state;
+    }
+
+    private static TimelineResult advance(TimelineState state, List<TimelineEvent> events) {
+        TimelineState boundary = advanceToBoundary(state,
+            snapshot -> isTerminal(snapshot) || !availableCommands(snapshot).isEmpty(),
+            CombatTimeline::nextDeadline, (snapshot, time) -> resolveBatch(snapshot, time, events));
+        Set<TimelineAction> available = availableCommands(boundary);
+        Stop stop = isTerminal(boundary) ? Stop.TERMINAL
+            : available.isEmpty() ? Stop.NO_PROGRESS : Stop.DECISION;
+        return new TimelineResult(boundary, stop, events, available);
     }
 
     private static boolean isTerminal(TimelineState state) {

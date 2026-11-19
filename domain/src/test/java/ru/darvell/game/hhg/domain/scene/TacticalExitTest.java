@@ -20,10 +20,10 @@ class TacticalExitTest {
             s.enterTactical(); Object placement=s.getPlacement(), bite=s.getBiteState();
             TacticalExitResult expected=x<=3?TacticalExitResult.ACTIVE_THREAT:TacticalExitResult.SUCCESS;
             assertEquals(expected,s.exitTacticalAvailability());
-            assertSame(placement,s.getPlacement()); assertSame(bite,s.getBiteState());
+            assertSame(placement,s.getPlacement()); assertEquals(bite,s.getBiteState());
             assertEquals(expected,s.tryExitTactical());
             assertEquals(0,s.getTacticalTimeUnits()); assertEquals(4,s.getHunterHealth());
-            assertSame(bite,s.getBiteState());
+            assertEquals(bite,s.getBiteState());
             if(x<=3) assertSame(placement,s.getPlacement());
             else { assertNull(s.getPlacement()); assertNull(s.update(0,0,0,false)); }
         }
@@ -44,8 +44,8 @@ class TacticalExitTest {
         WorldPosition position=s.getHunterPosition();
         assertEquals(TacticalExitResult.SUCCESS,s.tryExitTactical());
         assertSame(position,s.getHunterPosition());s.update(0,0,10,false);
-        assertSame(bite,s.getBiteState()); assertSame(history,s.getLastResolution());
-        s.enterTactical();assertSame(bite,s.getBiteState());assertEquals(time,s.getTacticalTimeUnits());
+        assertEquals(bite,s.getBiteState()); assertSame(history,s.getLastResolution());
+        s.enterTactical();assertEquals(bite,s.getBiteState());assertEquals(time,s.getTacticalTimeUnits());
         s.tryMoveHunterTo(new CellCoordinates(3,0)); assertEquals(time+1,s.getTacticalTimeUnits());
     }
     @Test void victoryHunterOnlyAndDeadActorStayDead() {

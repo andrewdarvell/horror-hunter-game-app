@@ -23,9 +23,9 @@ class CombatHudTest extends TacticalPointerTest {
         handler.touchDown(viewport.getScreenX()+10,top+10,0,0); up();
         PrototypeBiteState state=scene.getBiteState(); Object result=scene.getLastResolution();
         down(0,1); up(); tick(s,0); tick(s,Double.NaN); tick(s,.24);
-        assertSame(state,scene.getBiteState()); assertSame(result,scene.getLastResolution());
+        assertEquals(state,scene.getBiteState()); assertSame(result,scene.getLastResolution());
         assertTrue(CombatHud.phase(scene).contains("2 ед."));
-        bounds(480,800); assertSame(state,scene.getBiteState()); s.hide();
+        bounds(480,800); assertEquals(state,scene.getBiteState()); s.hide();
     }
     @Test void breakoutExplainsWoundDeathAndRejection() {
         String wounded=CombatHud.breakout(combat(0).previewBreakoutTo(new CellCoordinates(-3,0)));

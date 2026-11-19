@@ -25,20 +25,49 @@ class CombatRhythmTest {
         assertEquals(p,s.getBiteState().getPhase()); assertEquals(n,s.getBiteState().getRemainingUnits());
     }
     static TacticalAttackResult attack(WorldSceneState s) {
-        TacticalAttackResult preview=s.previewAttackCreature(c(0,0));
-        TacticalAttackResult r=s.tryAttackCreature(c(0,0));
-        assertEquals(preview.getHunterAfter(),r.getHunterAfter());
-        assertEquals(preview.getCreatureAfter(),r.getCreatureAfter());
-        assertEquals(preview.getOutcome(),r.getOutcome());
-        assertEquals(events(preview),events(r)); return r;
+        Object[] before = snapshot(s);
+        TacticalAttackResult preview = s.previewAttackCreature(c(0, 0));
+        assertArrayEquals(before, snapshot(s));
+        assertSameResolution(preview, s.previewAttackCreature(c(0, 0)));
+        assertArrayEquals(before, snapshot(s));
+        TacticalAttackResult applied = s.tryAttackCreature(c(0, 0));
+        assertSameResolution(preview, applied);
+        assertSame(applied, s.getLastResolution());
+        return applied;
+    }
+    static void assertSameResolution(TacticalAttackResult expected, TacticalAttackResult actual) {
+        assertArrayEquals(resolutionValues(expected), resolutionValues(actual));
+    }
+    private static Object[] resolutionValues(TacticalAttackResult result) {
+        return new Object[] {result.getKind(), result.getOutcome(), result.getRejectionReason(),
+            result.getHunterBefore(), result.getHunterAfter(), result.getCreatureBefore(), result.getCreatureAfter(),
+            result.getPositionBefore(), result.getPositionAfter(), result.getModeBefore(), result.getModeAfter(),
+            result.getBiteBefore(), result.getBiteAfter(), result.getDuration(), result.getPlannedDuration(),
+            result.getEffects(), events(result)};
     }
     static Object events(TacticalAttackResult r) {
         return r.getEvents().stream().map(e->e.getOffset()+":"+e.getType()).collect(Collectors.toList());
     }
     static Object[] snapshot(WorldSceneState s) {
-        return new Object[]{s.getPlacement(),s.getHunterPosition(),s.getCreaturePosition(),s.getBiteState(),
-            s.getHunterHealth(),s.getCreatureHealth(),s.getTacticalTimeUnits(),s.getLastResolution(),
-            s.isCreatureAlerted(),s.getLastSeenHunterPosition()};
+        return new Object[] {s.getMode(), s.getPlacement(), s.getHunterPosition(), s.getCreaturePosition(),
+            s.getBiteState(), s.getHunterHealth(), s.getCreatureHealth(), s.getTacticalTimeQuanta(),
+            s.getLastResolution(), s.isCreatureAlerted(), s.getLastSeenHunterPosition(),
+            s.getCreatureBehavior(), s.getCreatureSearchRemaining(), s.isCreatureReturnBlocked()};
+    }
+    static Field field(Object owner, String name) throws ReflectiveOperationException {
+        Field field = owner.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field;
+    }
+    static void rebaseClock(WorldSceneState scene, long now) throws ReflectiveOperationException {
+        Object state = field(scene, "state").get(scene);
+        Object bite = field(state, "biteTiming").get(state);
+        if (bite != null && scene.getBiteState().getPhase() != READY) {
+            Field deadline = field(bite, "deadline");
+            long remaining = deadline.getLong(bite) - scene.getTacticalTimeQuanta();
+            deadline.setLong(bite, Math.addExact(now, remaining));
+        }
+        field(state, "nowQuanta").setLong(state, now);
     }
     @Test void WBothEntryDistances() {
         for(int start:new int[]{1,2}) {
@@ -96,7 +125,7 @@ class CombatRhythmTest {
         for(int i=0;i<5;i++) { s.previewAttackCreature(c(0,0)); s.attackAvailability(c(0,0)); s.update(1,1,100,true); }
         s.tryAttackCreature(null); s.tryMoveHunterTo(c(0,0)); s.tryMoveHunterTo(c(1,0));
         assertArrayEquals(before,snapshot(s));
-        Field time=WorldSceneState.class.getDeclaredField("tacticalTimeUnits"); time.setAccessible(true); time.setLong(s,Long.MAX_VALUE);
+        rebaseClock(s, Long.MAX_VALUE - 2);
         before=snapshot(s);
         assertThrows(ArithmeticException.class,()->s.tryAttackCreature(c(0,0)));
         assertThrows(ArithmeticException.class,()->s.tryMoveHunterTo(c(1,1)));

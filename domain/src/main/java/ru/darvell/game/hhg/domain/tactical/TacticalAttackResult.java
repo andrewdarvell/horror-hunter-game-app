@@ -8,13 +8,13 @@ import java.util.List;
 
 /** Снимок одного разрешения; факты предназначены для показа, не для повторного применения. */
 public final class TacticalAttackResult {
-    public enum Outcome { HIT, INTERRUPTED, NOT_TACTICAL, INVALID_TARGET, TARGET_DEFEATED,
+    public enum Outcome { HIT, MISS, INTERRUPTED, NOT_TACTICAL, INVALID_TARGET, TARGET_DEFEATED,
         HUNTER_DEFEATED, OUT_OF_RANGE, BLOCKED, MOVE, REJECTED, MOVED_STILL_TACTICAL, ESCAPED }
     public enum Kind { ATTACK, MOVE, BREAKOUT }
     public enum RejectionReason { NOT_TACTICAL, HUNTER_DEFEATED, INVALID_TARGET, INVALID_DISTANCE,
         BLOCKED_START, BLOCKED_CENTER, BLOCKED_PATH, OCCUPIED_PATH }
     public enum Effect { BITE, HIT }
-    public enum EventType { HIT, BITE, BITE_MISS, PREPARATION_STARTED, RECOVERY_STARTED, RECOVERY_ENDED, BREAKOUT_MOVED, BREAKOUT_INTERRUPTED, TACTICAL_EXITED }
+    public enum EventType { HIT, ATTACK_MISS, BITE, BITE_MISS, PREPARATION_STARTED, RECOVERY_STARTED, RECOVERY_ENDED, BREAKOUT_MOVED, BREAKOUT_INTERRUPTED, TACTICAL_EXITED }
     public static final class Event {
         private final EventType type;
         private final int offset;
@@ -83,7 +83,8 @@ public final class TacticalAttackResult {
     public PrototypeBiteState getBiteAfter() { return biteAfter; }
     public List<Event> getEvents() { return events; }
     public Outcome getOutcome() { return outcome; }
-    public boolean isAccepted() { return outcome == Outcome.HIT || outcome == Outcome.INTERRUPTED || outcome == Outcome.MOVE
+    public boolean isAccepted() { return outcome == Outcome.HIT || outcome == Outcome.MISS
+        || outcome == Outcome.INTERRUPTED || outcome == Outcome.MOVE
         || outcome == Outcome.MOVED_STILL_TACTICAL || outcome == Outcome.ESCAPED; }
     public int getHunterBefore() { return hunterBefore; }
     public int getHunterAfter() { return hunterAfter; }

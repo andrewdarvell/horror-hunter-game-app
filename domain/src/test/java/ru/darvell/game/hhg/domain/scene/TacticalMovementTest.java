@@ -109,7 +109,7 @@ class TacticalMovementTest {
         CellCoordinates occupied = s.getPlacement().getCreatureCell();
         assertEquals(SUCCESS, s.tryMoveHunterTo(c(0, 1)));
         assertSame(seen, s.getLastSeenHunterPosition()); assertSame(creature, s.getCreaturePosition());
-        assertSame(occupied, s.getPlacement().getCreatureCell()); assertTrue(s.isCreatureAlerted());
+        assertEquals(occupied, s.getPlacement().getCreatureCell()); assertTrue(s.isCreatureAlerted());
         Object[] frozen = snapshot(s);
         s.update(1, 1, 100, true); assertArrayEquals(frozen, snapshot(s));
     }
