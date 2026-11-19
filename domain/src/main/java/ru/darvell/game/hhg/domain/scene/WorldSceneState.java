@@ -3,6 +3,7 @@ package ru.darvell.game.hhg.domain.scene;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState;
 import ru.darvell.game.hhg.domain.actor.CreaturePatrolState.Behavior;
 import ru.darvell.game.hhg.domain.actor.HunterState;
+import ru.darvell.game.hhg.domain.combat.timeline.CombatTimeline;
 import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
 import ru.darvell.game.hhg.domain.tactical.TacticalExitResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult;
@@ -24,41 +25,35 @@ import ru.darvell.game.hhg.domain.tactical.TacticalPlacement;
 import ru.darvell.game.hhg.domain.world.WorldGeometry;
 import ru.darvell.game.hhg.domain.world.WorldPosition;
 
+import static ru.darvell.game.hhg.domain.combat.timeline.CombatTimeline.QUANTA_PER_TICK;
+
 /** Владеет независимыми копиями участников; наружу выдаёт только значения состояния. */
 public final class WorldSceneState {
     private static final double EXPLORATION_STEP_SECONDS = 0.01;
     private static final double STEP_ROUNDING_SECONDS = 1e-12;
+    private static final long BITE_PREPARATION = QUANTA_PER_TICK;
+    private static final long BITE_RECOVERY = 3 * QUANTA_PER_TICK;
 
-    private HunterState hunter;
-    private CreaturePatrolState creature;
     private final TacticalGrid grid;
     private final WorldGeometry geometry;
     private final TacticalEntryPlanner planner = new TacticalEntryPlanner();
-    private boolean detectionOnPreviousCheck;
-    private boolean engagementOnPreviousCheck;
+    private SceneSnapshot state;
     private boolean initialObservationDone;
     private double explorationRemainder;
     private double pendingDirectionX;
     private double pendingDirectionY;
     private WorldPosition hunterBeforeEntry;
     private WorldPosition creatureBeforeEntry;
-    private SceneMode mode = SceneMode.EXPLORATION;
-    private TacticalPlacement placement;
-    private long tacticalTimeUnits;
-    private TacticalAttackResult lastResolution;
-    private PrototypeBiteState biteState;
-
-    public PrototypeBiteState getBiteState() { return biteState; }
 
     public WorldSceneState(HunterState hunter, CreaturePatrolState creature,
                            TacticalGrid grid, WorldGeometry geometry) {
         if (hunter == null || creature == null || grid == null || geometry == null) {
             throw new IllegalArgumentException("Scene components must be present");
         }
-        this.hunter = hunter.copy();
-        this.creature = creature.copy();
         this.grid = grid;
         this.geometry = geometry;
+        state = new SceneSnapshot(hunter.copy(), creature.copy(), SceneMode.EXPLORATION, 0,
+            null, null, false, false);
     }
 
     /** null означает отсутствие запроса в этом обновлении. */
@@ -66,7 +61,7 @@ public final class WorldSceneState {
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(delta) || delta < 0.0) {
             throw new IllegalArgumentException("Direction and non-negative time must be finite");
         }
-        if (mode == SceneMode.TACTICAL) {
+        if (state.mode == SceneMode.TACTICAL) {
             return manualEntry ? TacticalEntryResult.Outcome.ALREADY_TACTICAL : null;
         }
         double total = explorationRemainder + delta;
@@ -83,33 +78,33 @@ public final class WorldSceneState {
             if (observeEngagementEdge()) {
                 outcome = enterTactical();
                 manualEntry = false;
-                if (mode == SceneMode.TACTICAL) return outcome;
+                if (state.mode == SceneMode.TACTICAL) return outcome;
             }
         }
 
         for (long i = 0; i < steps; i++) {
             boolean pending = i == 0 && explorationRemainder > 0.0;
-            hunter.move(pending ? pendingDirectionX : x, pending ? pendingDirectionY : y,
-                EXPLORATION_STEP_SECONDS, geometry, creature.isDefeated() ? null : creature.getPosition(),
-                creature.getRadius());
+            state.hunter.move(pending ? pendingDirectionX : x, pending ? pendingDirectionY : y,
+                EXPLORATION_STEP_SECONDS, geometry, state.creature.isDefeated() ? null : state.creature.getPosition(),
+                state.creature.getRadius());
 
             if (observeEngagementEdge() || manualEntry) {
                 outcome = enterTactical();
                 manualEntry = false;
-                if (mode == SceneMode.TACTICAL) return outcome;
+                if (state.mode == SceneMode.TACTICAL) return outcome;
             }
 
-            creature.advanceExploration(EXPLORATION_STEP_SECONDS,
-                hunter.isDefeated() ? null : hunter.getPosition(), hunter.getRadius());
+            state.creature.advanceExploration(EXPLORATION_STEP_SECONDS,
+                state.hunter.isDefeated() ? null : state.hunter.getPosition(), state.hunter.getRadius());
             if (observeEngagementEdge()) {
                 outcome = enterTactical();
-                if (mode == SceneMode.TACTICAL) return outcome;
+                if (state.mode == SceneMode.TACTICAL) return outcome;
             }
-            creature.finishExplorationStep();
+            state.creature.finishExplorationStep();
         }
         if (manualEntry) {
             outcome = enterTactical();
-            if (mode == SceneMode.TACTICAL) return outcome;
+            if (state.mode == SceneMode.TACTICAL) return outcome;
         }
         if (delta > 0.0) {
             if (steps > 0 || explorationRemainder == 0.0) {
@@ -123,10 +118,14 @@ public final class WorldSceneState {
     }
 
     private boolean observeEngagementEdge() {
-        detectionOnPreviousCheck = creature.observeHunter(hunter.getPosition(), !hunter.isDefeated());
-        boolean engagement = canEngage(hunter, creature, detectionOnPreviousCheck);
-        boolean newEngagement = engagement && !engagementOnPreviousCheck;
-        engagementOnPreviousCheck = engagement;
+        SceneSnapshot before = state;
+        boolean detected = before.creature.observeHunter(before.hunter.getPosition(), !before.hunter.isDefeated());
+        boolean engagement = canEngage(before.hunter, before.creature, detected);
+        boolean newEngagement = engagement && !before.engaged;
+        if (detected != before.detected || engagement != before.engaged) {
+            state = new SceneSnapshot(before.hunter, before.creature, before.mode, before.nowQuanta,
+                before.biteTiming, before.lastResolution, detected, engagement);
+        }
         return newEngagement;
     }
 
@@ -140,7 +139,10 @@ public final class WorldSceneState {
     }
 
     public TacticalEntryResult.Outcome enterTactical() {
-        if (mode == SceneMode.TACTICAL) return TacticalEntryResult.Outcome.ALREADY_TACTICAL;
+        SceneSnapshot before = state;
+        if (before.mode == SceneMode.TACTICAL) return TacticalEntryResult.Outcome.ALREADY_TACTICAL;
+        HunterState hunter = before.hunter;
+        CreaturePatrolState creature = before.creature;
         TacticalEntryResult result = creature.isDefeated()
             ? planner.planHunterOnly(hunter.getPosition(), hunter.getRadius(), grid, geometry)
             : planner.plan(hunter.getPosition(), hunter.getRadius(),
@@ -149,29 +151,28 @@ public final class WorldSceneState {
             HunterState preparedHunter = hunter.withTacticalPosition(result.getHunterCenter());
             CreaturePatrolState preparedCreature = result.creatureCenter()
                 .map(creature::withTacticalPosition).orElse(creature);
-            TacticalPlacement preparedPlacement = result.getPlacement();
-            PrototypeBiteState preparedBite = preparedCreature.isDefeated() ? null
-                : biteState != null ? biteState : new PrototypeBiteState(canBite(preparedHunter, preparedCreature, preparedPlacement)
-                    ? Phase.PREPARING : Phase.READY,
-                    canBite(preparedHunter, preparedCreature, preparedPlacement) ? 1 : 0);
+            BiteTiming preparedBite = before.biteTiming;
+            if (!preparedCreature.isDefeated() && preparedBite == null) {
+                preparedBite = canContact(preparedHunter, preparedCreature)
+                    ? new BiteTiming(Phase.PREPARING, Math.addExact(before.nowQuanta, BITE_PREPARATION))
+                    : BiteTiming.READY;
+            }
+            SceneSnapshot prepared = new SceneSnapshot(preparedHunter, preparedCreature, SceneMode.TACTICAL,
+                before.nowQuanta, preparedBite, before.lastResolution, before.detected, before.engaged);
             // Публикация только после полной подготовки: без вызовов, проверок и callbacks.
             hunterBeforeEntry = hunter.getPosition();
             creatureBeforeEntry = creature.getPosition();
             explorationRemainder = 0.0;
             initialObservationDone = true;
-            hunter = preparedHunter;
-            creature = preparedCreature;
-            placement = preparedPlacement;
-            biteState = preparedBite;
-            mode = SceneMode.TACTICAL;
+            state = prepared;
         }
         return result.getOutcome();
     }
 
     public TacticalExitResult exitTacticalAvailability() {
-        if (mode != SceneMode.TACTICAL) return TacticalExitResult.NOT_TACTICAL;
-        if (hunter.isDefeated()) return TacticalExitResult.HUNTER_DEFEATED;
-        if (creature.canDetect(hunter.getPosition()) || canBite(hunter, creature, placement)) {
+        if (state.mode != SceneMode.TACTICAL) return TacticalExitResult.NOT_TACTICAL;
+        if (state.hunter.isDefeated()) return TacticalExitResult.HUNTER_DEFEATED;
+        if (state.creature.canDetect(state.hunter.getPosition()) || canContact(state.hunter, state.creature)) {
             return TacticalExitResult.ACTIVE_THREAT;
         }
         return TacticalExitResult.SUCCESS;
@@ -180,25 +181,25 @@ public final class WorldSceneState {
     public TacticalExitResult tryExitTactical() {
         TacticalExitResult result = exitTacticalAvailability();
         if (result == TacticalExitResult.SUCCESS) {
-            placement = null;
-            detectionOnPreviousCheck = false;
-            engagementOnPreviousCheck = false;
-            mode = SceneMode.EXPLORATION;
+            state = new SceneSnapshot(state.hunter, state.creature, SceneMode.EXPLORATION, state.nowQuanta,
+                state.biteTiming, state.lastResolution, false, false);
         }
         return result;
     }
 
     /** Проверки и подготовка предшествуют публикации в однопоточной сцене. */
     public TacticalMoveResult tryMoveHunterTo(CellCoordinates target) {
-        if (mode != SceneMode.TACTICAL) return TacticalMoveResult.NOT_TACTICAL;
+        if (state.mode != SceneMode.TACTICAL) return TacticalMoveResult.NOT_TACTICAL;
+        HunterState hunter = state.hunter;
+        CreaturePatrolState creature = state.creature;
         if (hunter.isDefeated()) return TacticalMoveResult.HUNTER_DEFEATED;
         if (target == null) return TacticalMoveResult.INVALID_INPUT;
-        CellCoordinates current = placement.getHunterCell();
+        CellCoordinates current = state.placement.getHunterCell();
         if (target.equals(current)) return TacticalMoveResult.SAME_CELL;
         long dx = (long) target.getX() - current.getX();
         long dy = (long) target.getY() - current.getY();
         if (Math.max(Math.abs(dx), Math.abs(dy)) != 1) return TacticalMoveResult.NOT_ADJACENT;
-        if (placement.creatureCell().filter(target::equals).isPresent()) return TacticalMoveResult.OCCUPIED;
+        if (state.placement.creatureCell().filter(target::equals).isPresent()) return TacticalMoveResult.OCCUPIED;
         WorldPosition center = grid.cellToWorldCenter(target);
         double cellX = Math.floor((center.getX() - grid.getOriginX()) / grid.getCellSize());
         double cellY = Math.floor((center.getY() - grid.getOriginY()) / grid.getCellSize());
@@ -211,24 +212,26 @@ public final class WorldSceneState {
             creature.isDefeated() ? null : creature.getPosition(), creature.getRadius())) {
             return TacticalMoveResult.BLOCKED_PATH;
         }
-        TacticalPlacement preparedPlacement = creature.isDefeated()
-            ? TacticalPlacement.hunterOnly(target) : new TacticalPlacement(target, placement.getCreatureCell());
-        resolve(false, hunter.withTacticalPosition(center), preparedPlacement, true);
+        resolve(Kind.MOVE, target, QUANTA_PER_TICK, true);
         return TacticalMoveResult.SUCCESS;
     }
 
-    public int getHunterHealth() { return hunter.getHealth(); }
-    public int getCreatureHealth() { return creature.getHealth(); }
-    public long getTacticalTimeUnits() { return tacticalTimeUnits; }
-    public TacticalAttackResult getLastResolution() { return lastResolution; }
+    public int getHunterHealth() { return state.hunter.getHealth(); }
+    public int getCreatureHealth() { return state.creature.getHealth(); }
+    public long getTacticalTimeQuanta() { return state.nowQuanta; }
+    public long getTacticalTimeUnits() { return toTacticalUnits(state.nowQuanta); }
+    public TacticalAttackResult getLastResolution() { return state.lastResolution; }
+    public PrototypeBiteState getBiteState() { return state.biteView(); }
 
     public Outcome attackAvailability(CellCoordinates target) {
-        if (mode != SceneMode.TACTICAL) return Outcome.NOT_TACTICAL;
+        if (state.mode != SceneMode.TACTICAL) return Outcome.NOT_TACTICAL;
+        HunterState hunter = state.hunter;
+        CreaturePatrolState creature = state.creature;
         if (hunter.isDefeated()) return Outcome.HUNTER_DEFEATED;
         if (target == null) return Outcome.INVALID_TARGET;
         if (creature.isDefeated()) return Outcome.TARGET_DEFEATED;
-        if (!target.equals(placement.getCreatureCell())) return Outcome.INVALID_TARGET;
-        if (!adjacent(placement.getHunterCell(), target)) return Outcome.OUT_OF_RANGE;
+        if (!target.equals(state.placement.getCreatureCell())) return Outcome.INVALID_TARGET;
+        if (!adjacent(state.placement.getHunterCell(), target)) return Outcome.OUT_OF_RANGE;
         if (!geometry.hasLineOfSight(hunter.getPosition(), creature.getPosition())) return Outcome.BLOCKED;
         return Outcome.HIT;
     }
@@ -244,17 +247,19 @@ public final class WorldSceneState {
 
     private TacticalAttackResult attack(CellCoordinates target, boolean publish) {
         Outcome check = attackAvailability(target);
-        if (check != Outcome.HIT) return new TacticalAttackResult(check, hunter.getHealth(), hunter.getHealth(),
-            creature.getHealth(), creature.getHealth(), 0, biteState, biteState, Collections.emptyList());
-        return resolve(true, hunter.copy(), placement, publish);
+        if (check != Outcome.HIT) {
+            PrototypeBiteState bite = getBiteState();
+            return new TacticalAttackResult(check, getHunterHealth(), getHunterHealth(),
+                getCreatureHealth(), getCreatureHealth(), 0, bite, bite, Collections.emptyList());
+        }
+        return resolve(Kind.ATTACK, null, 2 * QUANTA_PER_TICK, publish);
     }
 
     public TacticalAttackResult tryBreakoutTo(CellCoordinates target) { return breakout(target, true); }
 
     public TacticalAttackResult previewBreakoutTo(CellCoordinates target) { return breakout(target, false); }
 
-    private RejectionReason breakoutRejection(CellCoordinates target) {
-        if (mode != SceneMode.TACTICAL) return RejectionReason.NOT_TACTICAL;
+    private RejectionReason breakoutRejection(CellCoordinates target, HunterState hunter, CreaturePatrolState creature) {
         if (hunter.isDefeated()) return RejectionReason.HUNTER_DEFEATED;
         if (target == null) return RejectionReason.INVALID_TARGET;
         WorldPosition end = grid.cellToWorldCenter(target);
@@ -263,8 +268,9 @@ public final class WorldSceneState {
             || Math.floor((end.getY() - grid.getOriginY()) / grid.getCellSize()) != target.getY()
             || !Double.isFinite(Math.hypot(end.getX() - hunter.getPosition().getX(),
                 end.getY() - hunter.getPosition().getY()))) return RejectionReason.INVALID_TARGET;
-        long dx = (long) target.getX() - placement.getHunterCell().getX();
-        long dy = (long) target.getY() - placement.getHunterCell().getY();
+        CellCoordinates current = grid.worldToCell(hunter.getPosition());
+        long dx = (long) target.getX() - current.getX();
+        long dy = (long) target.getY() - current.getY();
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4 || dx * dx + dy * dy < 4
             || dx * dx + dy * dy > 16) return RejectionReason.INVALID_DISTANCE;
         if (!geometry.isCirclePositionValid(hunter.getPosition(), hunter.getRadius())) return RejectionReason.BLOCKED_START;
@@ -276,7 +282,7 @@ public final class WorldSceneState {
             double length = Math.hypot(x, y), ux = x / length, uy = y / length;
             double projection = Math.max(0, Math.min(length,
                 (c.getX() - from.getX()) * ux + (c.getY() - from.getY()) * uy));
-            if (target.equals(placement.getCreatureCell()) || Math.hypot(c.getX() - from.getX() - ux * projection,
+            if (target.equals(grid.worldToCell(c)) || Math.hypot(c.getX() - from.getX() - ux * projection,
                 c.getY() - from.getY() - uy * projection) < hunter.getRadius() + creature.getRadius()) {
                 return RejectionReason.OCCUPIED_PATH;
             }
@@ -285,19 +291,24 @@ public final class WorldSceneState {
     }
 
     private TacticalAttackResult breakout(CellCoordinates target, boolean publish) {
-        RejectionReason rejection = breakoutRejection(target);
-        if (rejection != null) return new TacticalAttackResult(Outcome.REJECTED,
-            hunter.getHealth(), hunter.getHealth(), creature.getHealth(), creature.getHealth(), 0,
-            biteState, biteState, Collections.emptyList(), Kind.BREAKOUT, rejection, 0,
-            hunter.getPosition(), hunter.getPosition(), mode, mode);
-        long dx = (long) target.getX() - placement.getHunterCell().getX();
-        long dy = (long) target.getY() - placement.getHunterCell().getY();
-        return resolve(false, hunter.copy(), placement, publish, target, dx * dx + dy * dy == 4 ? 2 : 3);
+        RejectionReason rejection = state.mode == SceneMode.TACTICAL
+            ? breakoutRejection(target, state.hunter, state.creature) : RejectionReason.NOT_TACTICAL;
+        if (rejection != null) {
+            PrototypeBiteState bite = getBiteState();
+            return new TacticalAttackResult(Outcome.REJECTED,
+                getHunterHealth(), getHunterHealth(), getCreatureHealth(), getCreatureHealth(), 0,
+                bite, bite, Collections.emptyList(), Kind.BREAKOUT, rejection, 0,
+                getHunterPosition(), getHunterPosition(), state.mode, state.mode);
+        }
+        long dx = (long) target.getX() - state.placement.getHunterCell().getX();
+        long dy = (long) target.getY() - state.placement.getHunterCell().getY();
+        long duration = (dx * dx + dy * dy == 4 ? 2 : 3) * QUANTA_PER_TICK;
+        return resolve(Kind.BREAKOUT, target, duration, publish);
     }
 
-    private boolean canBite(HunterState h, CreaturePatrolState c, TacticalPlacement p) {
+    private boolean canContact(HunterState h, CreaturePatrolState c) {
         return !h.isDefeated() && !c.isDefeated()
-            && adjacent(p.getHunterCell(), p.getCreatureCell())
+            && adjacent(grid.worldToCell(h.getPosition()), grid.worldToCell(c.getPosition()))
             && geometry.hasLineOfSight(h.getPosition(), c.getPosition());
     }
 
@@ -306,116 +317,225 @@ public final class WorldSceneState {
         return Math.max(Math.abs(dx), Math.abs(dy)) == 1;
     }
 
-    /** Узкий цикл прототипа; все вычисления до публикации, без AI scheduler. */
-    private TacticalAttackResult resolve(boolean attack, HunterState preparedHunter,
-                                        TacticalPlacement preparedPlacement, boolean publish) {
-        return resolve(attack, preparedHunter, preparedPlacement, publish, null, attack ? 2 : 1);
+    private TacticalAttackResult resolve(Kind kind, CellCoordinates target, long duration, boolean publish) {
+        TacticalTransition transition = CombatTimeline.advanceToBoundary(
+            new TacticalTransition(state, kind, target, duration),
+            TacticalTransition::atBoundary, TacticalTransition::nextDeadline, TacticalTransition::resolveBatch);
+        SceneSnapshot after = transition.finish();
+        if (publish) state = after;
+        return after.lastResolution;
     }
 
-    private TacticalAttackResult resolve(boolean attack, HunterState preparedHunter,
-                                        TacticalPlacement preparedPlacement, boolean publish,
-                                        CellCoordinates breakoutTarget, int duration) {
-        boolean breakout = breakoutTarget != null;
-        CreaturePatrolState preparedCreature = creature.copy();
-        PrototypeBiteState preparedBite = biteState;
-        List<Event> events = new ArrayList<>();
-        int elapsed = 0;
-        boolean hit = false;
-        for (int unit = 1; unit <= duration; unit++) {
-            elapsed = unit;
-            if (attack && unit == duration) {
-                preparedCreature = preparedCreature.withDamage(1);
-                hit = true;
-                events.add(new Event(EventType.HIT, unit));
-            }
-            if (preparedCreature.isDefeated()) {
-                preparedBite = null;
-            } else {
-                if (preparedBite.getPhase() == Phase.PREPARING) {
-                    boolean bites = canBite(preparedHunter, preparedCreature, preparedPlacement);
-                    if (bites) preparedHunter = preparedHunter.withDamage(1);
-                    events.add(new Event(bites ? EventType.BITE : EventType.BITE_MISS, unit));
-                    preparedBite = new PrototypeBiteState(Phase.RECOVERING, 3);
-                    events.add(new Event(EventType.RECOVERY_STARTED, unit));
-                } else if (preparedBite.getPhase() == Phase.RECOVERING) {
-                    int remaining = preparedBite.getRemainingUnits() - 1;
-                    preparedBite = new PrototypeBiteState(remaining == 0 ? Phase.READY : Phase.RECOVERING, remaining);
-                    if (remaining == 0) events.add(new Event(EventType.RECOVERY_ENDED, unit));
-                }
-            }
-            if (preparedHunter.isDefeated()) {
-                if (breakout) events.add(new Event(EventType.BREAKOUT_INTERRUPTED, unit));
-                break;
-            }
-            if (breakout && unit == 1) {
-                preparedHunter = preparedHunter.withTacticalPosition(grid.cellToWorldCenter(breakoutTarget));
-                preparedPlacement = preparedCreature.isDefeated() ? TacticalPlacement.hunterOnly(breakoutTarget)
-                    : new TacticalPlacement(breakoutTarget, preparedPlacement.getCreatureCell());
-                events.add(new Event(EventType.BREAKOUT_MOVED, unit));
-            }
-            if (!preparedCreature.isDefeated()) {
-                if (preparedBite.getPhase() == Phase.READY
-                    && canBite(preparedHunter, preparedCreature, preparedPlacement)) {
-                    preparedBite = new PrototypeBiteState(Phase.PREPARING, 1);
-                    events.add(new Event(EventType.PREPARATION_STARTED, unit));
-                }
-            }
+    private static long toTacticalUnits(long quanta) {
+        if (quanta % QUANTA_PER_TICK != 0) {
+            throw new IllegalStateException("Expected a whole number of tactical ticks");
         }
-        if (preparedCreature.isDefeated()) preparedPlacement = TacticalPlacement.hunterOnly(preparedPlacement.getHunterCell());
-        long preparedTime = Math.addExact(tacticalTimeUnits, elapsed);
-        SceneMode preparedMode = mode;
-        boolean detectedAtExit = false;
-        Outcome outcome = attack ? (hit ? Outcome.HIT : Outcome.INTERRUPTED) : Outcome.MOVE;
-        boolean exitAfterVictory = hit && !creature.isDefeated() && preparedCreature.isDefeated();
-        boolean exitAfterBreakout = false;
-        if (breakout) {
-            if (preparedHunter.isDefeated()) {
-                outcome = Outcome.INTERRUPTED;
-            } else {
-                boolean endpointDetected = preparedCreature.canDetect(preparedHunter.getPosition());
-                exitAfterBreakout = !canEngage(preparedHunter, preparedCreature, endpointDetected)
-                    && !canBite(preparedHunter, preparedCreature, preparedPlacement);
-                detectedAtExit = exitAfterBreakout && endpointDetected;
-                outcome = exitAfterBreakout ? Outcome.ESCAPED : Outcome.MOVED_STILL_TACTICAL;
-            }
-        }
-        if (exitAfterVictory || exitAfterBreakout) {
-            preparedMode = SceneMode.EXPLORATION;
-            preparedPlacement = null;
-            events.add(new Event(EventType.TACTICAL_EXITED, elapsed));
-        }
-        TacticalAttackResult result = new TacticalAttackResult(outcome,
-            hunter.getHealth(), preparedHunter.getHealth(), creature.getHealth(), preparedCreature.getHealth(),
-            elapsed, biteState, preparedBite, events, breakout ? Kind.BREAKOUT : attack ? Kind.ATTACK : Kind.MOVE,
-            null, duration, hunter.getPosition(), preparedHunter.getPosition(), mode, preparedMode);
-        if (publish) {
-            // Здесь нет allocation, проверок или callbacks: публикация в однопоточной сцене.
-            hunter = preparedHunter;
-            creature = preparedCreature;
-            placement = preparedPlacement;
-            biteState = preparedBite;
-            tacticalTimeUnits = preparedTime;
-            lastResolution = result;
-            mode = preparedMode;
-            if (exitAfterVictory || exitAfterBreakout) {
-                detectionOnPreviousCheck = detectedAtExit;
-                engagementOnPreviousCheck = false;
-            }
-        }
-        return result;
+        return quanta / QUANTA_PER_TICK;
     }
 
-    public SceneMode getMode() { return mode; }
-    public TacticalPlacement getPlacement() { return placement; }
-    public WorldPosition getHunterPosition() { return hunter.getPosition(); }
-    public WorldPosition getCreaturePosition() { return creature.getPosition(); }
-    public double getHunterRadius() { return hunter.getRadius(); }
-    public double getCreatureRadius() { return creature.getRadius(); }
+    private static int toResultUnits(long quanta) {
+        return Math.toIntExact(toTacticalUnits(quanta));
+    }
+
+    /** Тактический расчёт использует относительные сроки до фактической остановки. */
+    private final class TacticalTransition {
+        private final SceneSnapshot before;
+        private final Kind kind;
+        private final CellCoordinates target;
+        private final long duration;
+        private final boolean needsFirstBoundary;
+        private final List<Event> events = new ArrayList<>();
+        private HunterState hunter;
+        private CreaturePatrolState creature;
+        private BiteTiming bite;
+        private long offset;
+        private Outcome strike = Outcome.INTERRUPTED;
+
+        private TacticalTransition(SceneSnapshot before, Kind kind, CellCoordinates target, long duration) {
+            this.before = before;
+            this.kind = kind;
+            this.target = target;
+            this.duration = duration;
+            hunter = kind == Kind.MOVE ? before.hunter.withTacticalPosition(grid.cellToWorldCenter(target)) : before.hunter;
+            creature = before.creature;
+            bite = before.biteTiming == null ? null : before.biteTiming.rebase(-before.nowQuanta);
+            needsFirstBoundary = kind == Kind.BREAKOUT || bite == BiteTiming.READY;
+        }
+
+        private boolean atBoundary() {
+            return offset == duration || hunter.isDefeated();
+        }
+
+        private Long nextDeadline() {
+            long next = duration;
+            if (bite != null && bite.phase != Phase.READY) next = Math.min(next, bite.deadline);
+            if (needsFirstBoundary && offset < QUANTA_PER_TICK) next = Math.min(next, QUANTA_PER_TICK);
+            return next;
+        }
+
+        private TacticalTransition resolveBatch(long next) {
+            Math.addExact(before.nowQuanta, next);
+            offset = next;
+
+            if (kind == Kind.ATTACK && offset == duration) resolveStrike();
+            boolean biteDue = bite != null && bite.deadline == offset;
+            if (biteDue) resolveBite();
+            if (hunter.isDefeated()) {
+                if (kind == Kind.BREAKOUT) record(EventType.BREAKOUT_INTERRUPTED);
+                return this;
+            }
+
+            boolean firstBoundary = needsFirstBoundary && offset == QUANTA_PER_TICK;
+            if (firstBoundary && kind == Kind.BREAKOUT) moveForBreakout();
+            if (bite == BiteTiming.READY && (firstBoundary || biteDue) && canContact(hunter, creature)) {
+                bite = new BiteTiming(Phase.PREPARING, offset + BITE_PREPARATION);
+                record(EventType.PREPARATION_STARTED);
+            }
+            return this;
+        }
+
+        private void resolveStrike() {
+            // Удар нацелен на единственного участника-противника, а не на исходную клетку.
+            if (!canContact(hunter, creature)) {
+                strike = Outcome.MISS;
+                record(EventType.ATTACK_MISS);
+                return;
+            }
+            creature = creature.withDamage(1);
+            strike = Outcome.HIT;
+            record(EventType.HIT);
+            if (creature.isDefeated()) bite = null;
+        }
+
+        private void resolveBite() {
+            if (bite.phase == Phase.PREPARING) {
+                boolean hit = canContact(hunter, creature);
+                if (hit) hunter = hunter.withDamage(1);
+                record(hit ? EventType.BITE : EventType.BITE_MISS);
+                bite = new BiteTiming(Phase.RECOVERING, offset + BITE_RECOVERY);
+                record(EventType.RECOVERY_STARTED);
+            } else {
+                bite = BiteTiming.READY;
+                record(EventType.RECOVERY_ENDED);
+            }
+        }
+
+        private void moveForBreakout() {
+            RejectionReason rejection = breakoutRejection(target, hunter, creature);
+            if (rejection != null) {
+                throw new IllegalStateException("Validated breakout path became invalid: " + rejection);
+            }
+            hunter = hunter.withTacticalPosition(grid.cellToWorldCenter(target));
+            record(EventType.BREAKOUT_MOVED);
+        }
+
+        private void record(EventType type) {
+            events.add(new Event(type, toResultUnits(offset)));
+        }
+
+        private SceneSnapshot finish() {
+            SceneMode mode = before.mode;
+            boolean detected = before.detected;
+            boolean engaged = before.engaged;
+            Outcome outcome = kind == Kind.ATTACK ? strike : Outcome.MOVE;
+            boolean victory = strike == Outcome.HIT && creature.isDefeated();
+            if (kind == Kind.BREAKOUT) {
+                if (hunter.isDefeated()) {
+                    outcome = Outcome.INTERRUPTED;
+                } else {
+                    boolean endpointDetected = creature.canDetect(hunter.getPosition());
+                    boolean safe = !canEngage(hunter, creature, endpointDetected) && !canContact(hunter, creature);
+                    outcome = safe ? Outcome.ESCAPED : Outcome.MOVED_STILL_TACTICAL;
+                    if (safe) detected = endpointDetected;
+                }
+            }
+            if (victory || outcome == Outcome.ESCAPED) {
+                mode = SceneMode.EXPLORATION;
+                if (victory) detected = false;
+                engaged = false;
+                record(EventType.TACTICAL_EXITED);
+            }
+
+            long now = Math.addExact(before.nowQuanta, offset);
+            // При поражении охотника остаток фазы остаётся фактом результата, без будущего дедлайна.
+            BiteTiming scheduled = bite == null || hunter.isDefeated() ? null : bite.rebase(before.nowQuanta);
+            TacticalAttackResult result = new TacticalAttackResult(outcome,
+                before.hunter.getHealth(), hunter.getHealth(), before.creature.getHealth(), creature.getHealth(),
+                toResultUnits(offset), before.biteView(), bite == null ? null : bite.viewAt(offset), events,
+                kind, null, toResultUnits(duration), before.hunter.getPosition(), hunter.getPosition(),
+                before.mode, mode);
+            return new SceneSnapshot(hunter, creature, mode, now, scheduled, result, detected, engaged);
+        }
+    }
+
+    private static final class BiteTiming {
+        private static final BiteTiming READY = new BiteTiming(Phase.READY, 0);
+
+        private final Phase phase;
+        private final long deadline;
+
+        private BiteTiming(Phase phase, long deadline) {
+            this.phase = phase;
+            this.deadline = deadline;
+        }
+
+        private BiteTiming rebase(long origin) {
+            return phase == Phase.READY ? this : new BiteTiming(phase, Math.addExact(origin, deadline));
+        }
+
+        private PrototypeBiteState viewAt(long now) {
+            return new PrototypeBiteState(phase, phase == Phase.READY ? 0 : toResultUnits(deadline - now));
+        }
+    }
+
+    private final class SceneSnapshot {
+        private final HunterState hunter;
+        private final CreaturePatrolState creature;
+        private final SceneMode mode;
+        private final TacticalPlacement placement;
+        private final long nowQuanta;
+        private final BiteTiming biteTiming;
+        private final TacticalAttackResult lastResolution;
+        private final boolean detected;
+        private final boolean engaged;
+
+        private SceneSnapshot(HunterState hunter, CreaturePatrolState creature, SceneMode mode,
+                              long nowQuanta, BiteTiming biteTiming, TacticalAttackResult lastResolution,
+                              boolean detected, boolean engaged) {
+            this.hunter = hunter;
+            this.creature = creature;
+            this.mode = mode;
+            this.nowQuanta = nowQuanta;
+            this.biteTiming = biteTiming;
+            this.lastResolution = lastResolution;
+            this.detected = detected;
+            this.engaged = engaged;
+            this.placement = mode == SceneMode.TACTICAL ? placementFromPositions() : null;
+        }
+
+        private TacticalPlacement placementFromPositions() {
+            CellCoordinates hunterCell = grid.worldToCell(hunter.getPosition());
+            return creature.isDefeated() ? TacticalPlacement.hunterOnly(hunterCell)
+                : new TacticalPlacement(hunterCell, grid.worldToCell(creature.getPosition()));
+        }
+
+        private PrototypeBiteState biteView() {
+            if (biteTiming != null) return biteTiming.viewAt(nowQuanta);
+            return hunter.isDefeated() && lastResolution != null ? lastResolution.getBiteAfter() : null;
+        }
+    }
+
+    public SceneMode getMode() { return state.mode; }
+    public TacticalPlacement getPlacement() { return state.placement; }
+    public WorldPosition getHunterPosition() { return state.hunter.getPosition(); }
+    public WorldPosition getCreaturePosition() { return state.creature.getPosition(); }
+    public double getHunterRadius() { return state.hunter.getRadius(); }
+    public double getCreatureRadius() { return state.creature.getRadius(); }
     public WorldPosition getHunterBeforeEntry() { return hunterBeforeEntry; }
     public WorldPosition getCreatureBeforeEntry() { return creatureBeforeEntry; }
-    public Behavior getCreatureBehavior() { return creature.getBehavior(); }
-    public double getCreatureSearchRemaining() { return creature.getSearchRemaining(); }
-    public boolean isCreatureReturnBlocked() { return creature.isReturnBlocked(); }
-    public boolean isCreatureAlerted() { return creature.isAlerted(); }
-    public WorldPosition getLastSeenHunterPosition() { return creature.getLastSeenHunterPosition(); }
+    public Behavior getCreatureBehavior() { return state.creature.getBehavior(); }
+    public double getCreatureSearchRemaining() { return state.creature.getSearchRemaining(); }
+    public boolean isCreatureReturnBlocked() { return state.creature.isReturnBlocked(); }
+    public boolean isCreatureAlerted() { return state.creature.isAlerted(); }
+    public WorldPosition getLastSeenHunterPosition() { return state.creature.getLastSeenHunterPosition(); }
 }

@@ -17,28 +17,10 @@ class TacticalBreakoutTest {
         Object[] before = snapshot(s);
         TacticalAttackResult preview = s.previewBreakoutTo(c(x,y));
         assertArrayEquals(before, snapshot(s));
+        assertSameResolution(preview, s.previewBreakoutTo(c(x, y)));
+        assertArrayEquals(before, snapshot(s));
         TacticalAttackResult r = s.tryBreakoutTo(c(x,y));
-        assertEquals(preview.getKind(), r.getKind());
-        assertEquals(preview.getOutcome(), r.getOutcome());
-        assertEquals(preview.getRejectionReason(), r.getRejectionReason());
-        assertEquals(preview.getHunterBefore(), r.getHunterBefore());
-        assertEquals(preview.getHunterAfter(), r.getHunterAfter());
-        assertEquals(preview.getCreatureBefore(), r.getCreatureBefore());
-        assertEquals(preview.getCreatureAfter(), r.getCreatureAfter());
-        assertEquals(preview.getPositionBefore(), r.getPositionBefore());
-        assertEquals(preview.getPositionAfter(), r.getPositionAfter());
-        assertEquals(preview.getModeBefore(), r.getModeBefore());
-        assertEquals(preview.getModeAfter(), r.getModeAfter());
-        assertSame(preview.getBiteBefore(), r.getBiteBefore());
-        if (preview.getBiteAfter() == null) {
-            assertNull(r.getBiteAfter());
-        } else {
-            assertEquals(preview.getBiteAfter().getPhase(), r.getBiteAfter().getPhase());
-            assertEquals(preview.getBiteAfter().getRemainingUnits(), r.getBiteAfter().getRemainingUnits());
-        }
-        assertEquals(preview.getDuration(), r.getDuration());
-        assertEquals(preview.getPlannedDuration(), r.getPlannedDuration());
-        assertEquals(events(preview), events(r));
+        assertSameResolution(preview, r);
         if (r.isAccepted()) assertSame(r, s.getLastResolution());
         assertThrows(UnsupportedOperationException.class, () -> r.getEvents().clear());
         return r;
@@ -123,9 +105,11 @@ class TacticalBreakoutTest {
     @Test void InvalidStartAndEndpointGuardsAreAtomic() throws Exception {
         WorldGeometry g=new WorldGeometry(Arrays.asList(new StaticAabb(4,.0,1,1)));
         rejected(custom(0,0,-3,0,g,1),4,0,BLOCKED_CENTER);
-        WorldSceneState s=custom(0,0,-3,0,g,1);
-        Field hunter=WorldSceneState.class.getDeclaredField("hunter"); hunter.setAccessible(true);
-        hunter.set(s,((HunterState)hunter.get(s)).withTacticalPosition(new WorldPosition(4.5,.5)));
+        WorldGeometry closeWall = new WorldGeometry(Arrays.asList(new StaticAabb(.95, 0, .05, 1)));
+        WorldSceneState s = custom(0, 0, -3, 0, closeWall, 1);
+        Object snapshot = field(s, "state").get(s);
+        Field hunter = field(snapshot, "hunter");
+        hunter.set(snapshot, ((HunterState) hunter.get(snapshot)).withTacticalPosition(new WorldPosition(.96, .5)));
         rejected(s,2,0,BLOCKED_START);
     }
 
@@ -180,13 +164,28 @@ class TacticalBreakoutTest {
     }
 
     @Test void OverflowAndRefusalsPublishNothingButActualElapsedFits() throws Exception {
-        Field time=WorldSceneState.class.getDeclaredField("tacticalTimeUnits"); time.setAccessible(true);
-        WorldSceneState s=scene(1,0); time.setLong(s,Long.MAX_VALUE-1); Object[] before=snapshot(s);
+        WorldSceneState s = scene(1, 0);
+        rebaseClock(s, Long.MAX_VALUE - 2);
+        Object[] before = snapshot(s);
         assertThrows(ArithmeticException.class,()->s.tryBreakoutTo(c(4,0))); assertArrayEquals(before,snapshot(s));
         assertThrows(ArithmeticException.class,()->s.previewBreakoutTo(c(4,0))); assertArrayEquals(before,snapshot(s));
-        WorldSceneState dying=mistakes(); time.setLong(dying,Long.MAX_VALUE-1);
-        assertEquals(1,run(dying,4,0).getDuration()); assertEquals(Long.MAX_VALUE,dying.getTacticalTimeUnits());
+        WorldSceneState dying = mistakes();
+        rebaseClock(dying, Long.MAX_VALUE - 2);
+        assertEquals(1, run(dying, 4, 0).getDuration());
+        assertEquals(Long.MAX_VALUE, dying.getTacticalTimeQuanta());
         rejected(dying,4,0,TacticalAttackResult.RejectionReason.HUNTER_DEFEATED);
+    }
+
+    @Test
+    void FutureRecoveryOverflowRollsBackAnOtherwiseRepresentableBreakout() throws Exception {
+        WorldSceneState scene = scene(1, 0);
+        // Перемещение и укус произошли в расчёте, а конец recovery лежит за пределом шкалы.
+        rebaseClock(scene, Long.MAX_VALUE - 6);
+        Object[] before = snapshot(scene);
+        assertThrows(ArithmeticException.class, () -> scene.previewBreakoutTo(c(4, 0)));
+        assertArrayEquals(before, snapshot(scene));
+        assertThrows(ArithmeticException.class, () -> scene.tryBreakoutTo(c(4, 0)));
+        assertArrayEquals(before, snapshot(scene));
     }
 
     @Test void RecontactPreservesHistoryAndDoesNotImmediatelyReenter() {
@@ -200,9 +199,9 @@ class TacticalBreakoutTest {
         s.update(0,0,0,false); assertTrue(s.isCreatureAlerted());
         run(s,4,0); TacticalAttackResult history=s.getLastResolution(); PrototypeBiteState phase=s.getBiteState();
         for(int i=0;i<4;i++) assertNull(s.update(0,0,0,false));
-        assertEquals(SceneMode.EXPLORATION,s.getMode()); assertSame(history,s.getLastResolution()); assertSame(phase,s.getBiteState());
+        assertEquals(SceneMode.EXPLORATION,s.getMode()); assertSame(history,s.getLastResolution()); assertEquals(phase,s.getBiteState());
         rejected(s,6,0,TacticalAttackResult.RejectionReason.NOT_TACTICAL);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS,s.update(-1,0,2,false));
-        assertSame(phase,s.getBiteState()); assertSame(history,s.getLastResolution()); assertEquals(3,s.getHunterHealth());
+        assertEquals(phase,s.getBiteState()); assertSame(history,s.getLastResolution()); assertEquals(3,s.getHunterHealth());
     }
 }

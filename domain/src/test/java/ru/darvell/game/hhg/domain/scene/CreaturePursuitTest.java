@@ -97,7 +97,7 @@ class CreaturePursuitTest {
         assertNull(scene.update(0, 0, .6, false));
         assertEquals(.7, scene.getCreaturePosition().getY(), EPSILON);
         assertSame(breakout, scene.getLastResolution());
-        assertSame(bite, scene.getBiteState());
+        assertEquals(bite, scene.getBiteState());
         assertEquals(2, scene.getTacticalTimeUnits());
         assertEquals(4, scene.getHunterHealth());
     }
@@ -119,7 +119,7 @@ class CreaturePursuitTest {
         assertEquals(1.48, distance(scene.getHunterBeforeEntry(), scene.getCreatureBeforeEntry()), EPSILON);
         assertEquals(SceneMode.TACTICAL, scene.getMode());
         assertSame(breakout, scene.getLastResolution());
-        assertSame(bite, scene.getBiteState());
+        assertEquals(bite, scene.getBiteState());
         assertEquals(2, scene.getTacticalTimeUnits());
         assertEquals(3, scene.getHunterHealth());
         assertEquals(2, scene.getCreatureHealth());

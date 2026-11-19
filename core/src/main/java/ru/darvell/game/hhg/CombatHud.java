@@ -53,6 +53,7 @@ final class CombatHud {
             case BREAKOUT_INTERRUPTED: return "Прорыв прерван";
             case TACTICAL_EXITED: return "Выход из тактики";
             case HIT: return "Удар −1";
+            case ATTACK_MISS: return "Промах удара";
             case BITE: return "Укус −1";
             case BITE_MISS: return "Промах укуса";
             case PREPARATION_STARTED: return "Подготовка";

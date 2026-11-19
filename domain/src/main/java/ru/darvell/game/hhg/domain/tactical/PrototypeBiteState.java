@@ -1,6 +1,9 @@
 package ru.darvell.game.hhg.domain.tactical;
 
-/** Временный профиль только текущего прототипного существа: 1/0/3. */
+import lombok.EqualsAndHashCode;
+
+/** Read-only проекция фазы и остатка в целых тактических единицах. */
+@EqualsAndHashCode
 public final class PrototypeBiteState {
     public enum Phase { READY, PREPARING, RECOVERING }
     private final Phase phase;
