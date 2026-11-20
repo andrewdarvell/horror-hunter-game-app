@@ -47,6 +47,10 @@ public final class GraphicsLabScreen extends ScreenAdapter {
     boolean showBounds = true;
     boolean showFootprint = true;
     boolean showPivots = true;
+    final FacingIndicator facingIndicator = new FacingIndicator();
+    boolean allFacing;
+    boolean solo;
+    boolean showHud = true;
     private boolean crowded;
     private InputProcessor previousInput;
     private boolean active;
@@ -55,6 +59,17 @@ public final class GraphicsLabScreen extends ScreenAdapter {
         @Override public boolean keyDown(int key) {
             LabFigure figure = figures[selected];
             switch (key) {
+                case Input.Keys.Q: figure.turn(-1); break;
+                case Input.Keys.E: figure.turn(1); break;
+                case Input.Keys.V: facingIndicator.nextKind(); break;
+                case Input.Keys.H: allFacing = !allFacing; break;
+                case Input.Keys.J: solo = !solo; break;
+                case Input.Keys.K: showHud = !showHud; break;
+                case Input.Keys.BACKSPACE: figure.resetFacing(); break;
+                case Input.Keys.U: facingIndicator.setSectorAngle(facingIndicator.getSectorAngle() - 15); break;
+                case Input.Keys.I: facingIndicator.setSectorAngle(facingIndicator.getSectorAngle() + 15); break;
+                case Input.Keys.O: facingIndicator.setSectorRadius(facingIndicator.getSectorRadius() - .1f); break;
+                case Input.Keys.L: facingIndicator.setSectorRadius(facingIndicator.getSectorRadius() + .1f); break;
                 case Input.Keys.NUM_1: selected = 0; break;
                 case Input.Keys.NUM_2: selected = 1; break;
                 case Input.Keys.NUM_3: selected = 2; break;
@@ -82,6 +97,7 @@ public final class GraphicsLabScreen extends ScreenAdapter {
                     for (int i = 0; i < figures.length; i++) {
                         figures[i].cycleSize(i - figures[i].getSize().ordinal());
                         figures[i].setScale(1);
+                        figures[i].resetFacing();
                         figures[i].moveTo(.5f + (i - 1) * 3, -.5f);
                     }
                     crowded = false;
@@ -105,7 +121,7 @@ public final class GraphicsLabScreen extends ScreenAdapter {
 
         @Override public boolean touchDown(int x, int y, int pointer, int button) {
             if (button != Input.Buttons.LEFT || !insideViewport(x, y)
-                || y < 116 || y >= Gdx.graphics.getHeight() - 99) return false;
+                || (showHud && (y < 116 || y >= Gdx.graphics.getHeight() - 99))) return false;
             Vector2 point = viewport.unproject(new Vector2(x, y));
             figures[selected].moveTo(point.x, point.y);
             if (tactical) figures[selected].snap(grid);
@@ -175,10 +191,21 @@ public final class GraphicsLabScreen extends ScreenAdapter {
         renderer.setProjectionMatrix(camera.combined);
         drawField();
         Arrays.sort(drawOrder, Comparator.comparingDouble(LabFigure::getY).reversed());
-        for (LabFigure figure : drawOrder) drawWolf(figure);
+        for (LabFigure figure : drawOrder) {
+            if (visible(figure) && facingVisible(figure)) facingIndicator.drawSector(renderer, figure, PrototypeViewConfig.CELL_SIZE);
+        }
+        for (LabFigure figure : drawOrder) {
+            if (!visible(figure)) continue;
+            if (facingVisible(figure)) facingIndicator.drawBase(renderer, figure, PrototypeViewConfig.CELL_SIZE);
+            drawWolf(figure);
+            if (facingVisible(figure)) facingIndicator.drawNotch(renderer, figure, PrototypeViewConfig.CELL_SIZE);
+        }
         drawGuides();
-        drawHud();
+        if (showHud) drawHud();
     }
+
+    private boolean visible(LabFigure figure) { return !solo || figure == figures[selected]; }
+    private boolean facingVisible(LabFigure figure) { return allFacing || figure == figures[selected]; }
 
     private float axis(int negative, int positive) {
         return (Gdx.input.isKeyPressed(positive) ? 1 : 0) - (Gdx.input.isKeyPressed(negative) ? 1 : 0);
@@ -188,6 +215,7 @@ public final class GraphicsLabScreen extends ScreenAdapter {
         if (showFootprint) {
             renderer.begin(ShapeRenderer.ShapeType.Filled);
             for (int i = 0; i < figures.length; i++) {
+                if (!visible(figures[i])) continue;
                 CellCoordinates cell = figures[i].cell(grid);
                 renderer.setColor(i == selected ? Color.valueOf("52623a") : Color.valueOf("293e32"));
                 renderer.rect((float) (grid.getOriginX() + cell.getX() * grid.getCellSize()),
@@ -252,6 +280,7 @@ public final class GraphicsLabScreen extends ScreenAdapter {
         renderer.begin(ShapeRenderer.ShapeType.Line);
         for (int i = 0; i < figures.length; i++) {
             LabFigure f = figures[i];
+            if (!visible(f)) continue;
             Rectangle bounds = f.bounds();
             if (showBounds) {
                 renderer.setColor(Color.SKY);
@@ -297,18 +326,21 @@ public final class GraphicsLabScreen extends ScreenAdapter {
             LabFigure f = figures[i];
             Rectangle bounds = f.bounds();
             font.setColor(i == selected ? Color.YELLOW : colors[i]);
-            font.draw(batch, String.format(Locale.ROOT, "%s%d %s | %.2fx | %.0fx%.0f px | cell (%d,%d)",
+            font.draw(batch, String.format(Locale.ROOT, "%s%d %s | %.2fx | %.0fx%.0f px | cell (%d,%d) | %s",
                 i == selected ? "> " : "  ", i + 1, f.getSize(), f.getScale(),
                 bounds.width / unitsPerPixel(), bounds.height / unitsPerPixel(),
-                f.cell(grid).getX(), f.cell(grid).getY()), 8, height - 32 - i * 20);
+                f.cell(grid).getX(), f.cell(grid).getY(), f.getFacing()), 8, height - 32 - i * 20);
         }
         font.setColor(Color.LIGHT_GRAY);
-        font.draw(batch, "1/2/3: выбор  +/-: scale  [/]: размер  C: соседние клетки", 8, 91);
+        font.draw(batch, "Q/E: facing  V: " + facingIndicator.getKind() + "  H: " + (allFacing ? "all" : "selected")
+            + "  Backspace: N", 8, height - 96);
+        font.draw(batch, "1/2/3: выбор  +/-: scale  [/]: класс  C: соседи  J: solo", 8, 91);
         font.draw(batch, "WASD/ЛКМ: движение  Стрелки/ПКМ: камера  Колесо/Z/X: zoom", 8, 72);
-        font.draw(batch, "T: режим  R: камера 1x  Space: сброс фигур и камеры", 8, 53);
+        font.draw(batch, "T: режим  R: камера 1x  Space: сброс  K: HUD", 8, 53);
         font.draw(batch, String.format("G: сетка %s  F: клетка %s  B: bounds %s  P: pivot %s",
             on(showGrid), on(showFootprint), on(showBounds), on(showPivots)), 8, 34);
-        font.draw(batch, "Голубой: bounds  Оранжевый: ground  Розовый: root pivot", 8, 15);
+        font.draw(batch, String.format(Locale.ROOT, "U/I: угол %.0f deg  O/L: радиус %.2f cell (Sector)",
+            facingIndicator.getSectorAngle(), facingIndicator.getSectorRadius()), 8, 15);
         batch.end();
     }
 
