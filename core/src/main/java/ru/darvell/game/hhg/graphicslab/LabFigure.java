@@ -26,6 +26,7 @@ public final class LabFigure {
     private float scale = 1f;
     private float x;
     private float y;
+    private Facing facing = Facing.N;
 
     public LabFigure(Size size, float x, float y) {
         this.size = size;
@@ -36,6 +37,9 @@ public final class LabFigure {
     public float getScale() { return scale; }
     public float getX() { return x; }
     public float getY() { return y; }
+    public Facing getFacing() { return facing; }
+    public void turn(int clockwiseSteps) { facing = facing.turn(clockwiseSteps); }
+    public void resetFacing() { facing = Facing.N; }
     public float getPivotX() { return size.width / 2f; }
     public float getPivotY() { return size.height * 108f / 128f; }
 
