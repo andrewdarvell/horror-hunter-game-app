@@ -10,7 +10,7 @@ import com.badlogic.gdx.utils.BufferUtils;
 
 /** Только Lab. Геометрия в долях клетки; visual bounds и scale фигуры не читаются. */
 public final class FacingIndicator {
-    public enum Kind { ARROW, NOTCH, SECTOR, OFF }
+    public enum Kind { ARROW, NOTCH, SECTOR, COMPASS_BADGE, OFF }
 
     private static final Color DARK = Color.valueOf("172019");
     private static final Color LIGHT = Color.valueOf("ffdc80");

@@ -5,6 +5,7 @@
 
 Дополнительный эксперимент: [Facing Direction — управление, сравнение и screenshots](GRAPHICS_LAB_FACING.md).
 Он не определяет окончательный индикатор и не добавляет направление в боевую модель.
+Новый вариант: [Tactical Compass Badge — три позиции и строгое скрытие в Exploration](GRAPHICS_LAB_COMPASS.md).
 
 ## Запуск
 
@@ -34,7 +35,8 @@ Lab не создаёт боевую симуляцию. Tactical preview сра
 | T | Exploration / tactical preview; вход в tactical центрирует anchors по клеткам |
 | G / F / B / P | Сетка / footprint / visual bounds / ground line и pivot |
 | Q / E | Повернуть facing выбранной фигуры на 45° против / по часовой стрелке |
-| V / H | Arrow → Notch → Sector → Off / индикатор выбранного или всех |
+| V / H | Arrow → Notch → Sector → Compass Badge → Off / индикатор выбранного или всех |
+| M | Позиция Badge: Top Right → Top Left → Above Head |
 | Backspace | Сбросить facing выбранного в N |
 | J / K | Одиночный просмотр выбранного / показать или скрыть HUD |
 | U / I | Уменьшить / увеличить угол Sector на 15°, диапазон 15–180° |
