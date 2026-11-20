@@ -47,7 +47,7 @@ public final class FacingSmoke extends ApplicationAdapter {
                 lab.controls.keyDown(Input.Keys.K);
                 check(lab.solo && !lab.showHud, "solo screenshot controls");
                 for (FacingIndicator.Kind kind : FacingIndicator.Kind.values()) {
-                    if (kind == FacingIndicator.Kind.OFF) continue;
+                    if (kind == FacingIndicator.Kind.OFF || kind == FacingIndicator.Kind.COMPASS_BADGE) continue;
                     setKind(kind);
                     lab.figures[1].resetFacing();
                     for (Facing direction : Facing.values()) {
@@ -147,7 +147,7 @@ public final class FacingSmoke extends ApplicationAdapter {
         figure.resetFacing();
         figure.turn(4); // S: контрольный пиксель на земле не закрыт телом.
         for (FacingIndicator.Kind kind : FacingIndicator.Kind.values()) {
-            if (kind == FacingIndicator.Kind.OFF) continue;
+            if (kind == FacingIndicator.Kind.OFF || kind == FacingIndicator.Kind.COMPASS_BADGE) continue;
             float offset = kind == FacingIndicator.Kind.ARROW ? -.78f : kind == FacingIndicator.Kind.NOTCH ? -.21f : -.6f;
             setKind(FacingIndicator.Kind.OFF);
             lab.render(0);
@@ -207,7 +207,7 @@ public final class FacingSmoke extends ApplicationAdapter {
 
     private void comparison(String name) {
         for (FacingIndicator.Kind kind : FacingIndicator.Kind.values()) {
-            if (kind == FacingIndicator.Kind.OFF) continue;
+            if (kind == FacingIndicator.Kind.OFF || kind == FacingIndicator.Kind.COMPASS_BADGE) continue;
             setKind(kind);
             lab.render(0);
             capture(name + "-" + kind);

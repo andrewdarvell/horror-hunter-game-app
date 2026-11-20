@@ -268,3 +268,12 @@ tasks.register('facingSmoke', JavaExec) {
   systemProperty 'graphicsLab.output', layout.buildDirectory.dir('graphics-lab-facing').get().asFile.absolutePath
   if (os.contains('mac')) jvmArgs '-XstartOnFirstThread'
 }
+
+tasks.register('compassBadgeSmoke', JavaExec) {
+  dependsOn compileCombatRhythmSmoke
+  classpath = sourceSets.main.runtimeClasspath + files(layout.buildDirectory.dir('classes/smoke'))
+  mainClass = 'ru.darvell.game.hhg.graphicslab.CompassBadgeSmoke'
+  workingDir = rootProject.file('assets')
+  systemProperty 'graphicsLab.output', layout.buildDirectory.dir('graphics-lab-compass').get().asFile.absolutePath
+  if (os.contains('mac')) jvmArgs '-XstartOnFirstThread'
+}

@@ -2,6 +2,8 @@
 
 Визуальный эксперимент `graphics-lab-facing`. Domain, combat, AI, движение и
 тактические правила не меняются. **Ни один вариант не утверждён как арт-стандарт.**
+Дополнительно доступен [Tactical Compass Badge](GRAPHICS_LAB_COMPASS.md), который
+в отличие от наземных вариантов виден исключительно в Tactical preview.
 
 ## Запуск и управление
 
@@ -18,7 +20,8 @@
 |---|---|
 | 1 / 2 / 3, Tab | Выбрать персонажа |
 | Q / E | Поворот выбранного на −45° / +45° по часовой стрелке |
-| V | Arrow → Notch → Sector → Off |
+| V | Arrow → Notch → Sector → Compass Badge → Off |
+| M | Top Right → Top Left → Above Head для Compass Badge |
 | H | Индикаторы выбранного / всех; facing каждого сохраняется отдельно |
 | Backspace | Facing выбранного = N |
 | Space | Прежний сброс фигур/камеры плюс facing всех = N |

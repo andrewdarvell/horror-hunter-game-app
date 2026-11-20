@@ -48,6 +48,7 @@ public final class GraphicsLabScreen extends ScreenAdapter {
     boolean showFootprint = true;
     boolean showPivots = true;
     final FacingIndicator facingIndicator = new FacingIndicator();
+    final CompassBadge compassBadge = new CompassBadge();
     boolean allFacing;
     boolean solo;
     boolean showHud = true;
@@ -62,6 +63,7 @@ public final class GraphicsLabScreen extends ScreenAdapter {
                 case Input.Keys.Q: figure.turn(-1); break;
                 case Input.Keys.E: figure.turn(1); break;
                 case Input.Keys.V: facingIndicator.nextKind(); break;
+                case Input.Keys.M: compassBadge.nextPosition(); break;
                 case Input.Keys.H: allFacing = !allFacing; break;
                 case Input.Keys.J: solo = !solo; break;
                 case Input.Keys.K: showHud = !showHud; break;
@@ -201,6 +203,12 @@ public final class GraphicsLabScreen extends ScreenAdapter {
             if (facingVisible(figure)) facingIndicator.drawNotch(renderer, figure, PrototypeViewConfig.CELL_SIZE);
         }
         drawGuides();
+        for (LabFigure figure : drawOrder) {
+            if (visible(figure) && facingVisible(figure)) {
+                compassBadge.draw(renderer, figure, facingIndicator.getKind(), tactical,
+                    PrototypeViewConfig.CELL_SIZE, unitsPerPixel());
+            }
+        }
         if (showHud) drawHud();
     }
 
@@ -339,8 +347,12 @@ public final class GraphicsLabScreen extends ScreenAdapter {
         font.draw(batch, "T: режим  R: камера 1x  Space: сброс  K: HUD", 8, 53);
         font.draw(batch, String.format("G: сетка %s  F: клетка %s  B: bounds %s  P: pivot %s",
             on(showGrid), on(showFootprint), on(showBounds), on(showPivots)), 8, 34);
-        font.draw(batch, String.format(Locale.ROOT, "U/I: угол %.0f deg  O/L: радиус %.2f cell (Sector)",
-            facingIndicator.getSectorAngle(), facingIndicator.getSectorRadius()), 8, 15);
+        if (facingIndicator.getKind() == FacingIndicator.Kind.COMPASS_BADGE) {
+            font.draw(batch, "M: badge " + compassBadge.getPosition() + " | Tactical only", 8, 15);
+        } else {
+            font.draw(batch, String.format(Locale.ROOT, "U/I: угол %.0f deg  O/L: радиус %.2f cell (Sector)",
+                facingIndicator.getSectorAngle(), facingIndicator.getSectorRadius()), 8, 15);
+        }
         batch.end();
     }
 
