@@ -37,10 +37,7 @@ import ru.darvell.game.hhg.domain.tactical.TacticalMoveResult;
 /** First screen of the application. Displayed after the application is created. */
 public class FirstScreen implements Screen {
     private static final int MODE_BUTTON_WIDTH = 220;
-    private static final float VIRTUAL_WIDTH = 20.0f;
-    private static final float VIRTUAL_HEIGHT = 15.0f;
     private static final double PROTOTYPE_MOVEMENT_SPEED = 5.0;
-    private static final double PROTOTYPE_CELL_SIZE = 1.0;
     private static final double PROTOTYPE_HUNTER_RADIUS = 0.4;
 
     private final WorldSceneState scene;
@@ -225,10 +222,10 @@ public class FirstScreen implements Screen {
             new WorldPosition(5.0, 0.0),
             new WorldPosition(5.0, 1.0)
         ), new CreatureBehaviorConfig(2.0, 4.0, 3.0, 2.0, 2.0, 3.0, 1.5, 0.5), 0.3, worldGeometry);
-        tacticalGrid = new TacticalGrid(0.0, 0.0, PROTOTYPE_CELL_SIZE);
+        tacticalGrid = new TacticalGrid(0.0, 0.0, PrototypeViewConfig.CELL_SIZE);
         scene = new WorldSceneState(hunter, creaturePatrol, tacticalGrid, worldGeometry);
         camera = new OrthographicCamera();
-        viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
+        viewport = new FitViewport(PrototypeViewConfig.WORLD_WIDTH, PrototypeViewConfig.WORLD_HEIGHT, camera);
         shapeRenderer = new ShapeRenderer();
         selectVisualPositions();
     }
