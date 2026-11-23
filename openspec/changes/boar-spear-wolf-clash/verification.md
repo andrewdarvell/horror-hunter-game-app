@@ -33,3 +33,25 @@ openspec validate boar-spear-wolf-clash --strict --no-interactive
 ```
 
 Доменный прогон выполнил 227 тестов, включая 18 новых. Проверка OpenSpec 1.17.0 прошла в строгом режиме.
+
+## Desktop fixture и Android
+
+```sh
+./gradlew :lwjgl3:combatRhythmSmoke :lwjgl3:tacticalBreakoutSmoke :lwjgl3:creaturePursuitSmoke :lwjgl3:boarSpearWolfClashSmoke
+./gradlew :android:assembleDebug
+```
+
+Все четыре Desktop smoke прошли. Трассы обычных W/D/C и F1–F8 совпали с эталонным прогоном. Pursuit прошёл CHASE, escape/recontact, LOS, blocked return, victory, resize и pointer. Новый fixture использовал `FirstScreen`, реальный Desktop OpenGL и события pointer 0. В первом пакете волк стартует в q2, затем при просмотре прогноза остаётся в полёте и сохраняет cursor 0. В каждом прогоне ниже охотник остаётся в (0,0), режим остаётся tactical. Записи после контакта:
+
+| Профиль | Решение | HP | Клетка волка | Фаза и остаток волка | Cursor | Дедлайны journal |
+| --- | --- | --- | --- | --- | --- | --- |
+| Seed 3, отбросило | q6 | 4/1 | (3,0) | RECOVERING / 4 | 1 | q4 контакт и оба recovery, q6 готов охотник |
+| Seed 1, проскочил | q8 | 4/1 | (−1,1) | SPENT / 0 | 1 | q4 контакт и оба recovery, q8 готовы оба |
+| Seed 0, вплотную | q10 | 4/2 | (1,0) | SPENT / 0 | 1 | q4 контакт и оба recovery, q6 готов волк, q10 готов охотник |
+| Боковой старт, попадание | q6 | 3/2 | (0,1) | RECOVERING / 2 | 0 | q4 контакт и оба recovery, q6 готов охотник |
+
+`SpearClashPointerTest` прошёл выбор и отдельное подтверждение, повторный ввод через финальный кадр, паузу, смену намерения после устаревшего прогноза, второй указатель и старый gate победного выхода. При разных render delta одинаковые команды дали равные HP, позиции, сроки, фазы, факты и cursor. Итоговый прогон `core` выполнил 60 тестов, включая прежние проверки breakout gate, resize, HiDPI и letterbox.
+
+Desktop smoke сохраняет кадры `lwjgl3/build/boar-spear-paused-*.png` и `lwjgl3/build/boar-spear-result-*.png`. Проверены landscape 800×600 и portrait 480×800. Для интерактивного запуска использовать `./gradlew :lwjgl3:boarSpearWolfClashSmoke --args=3`. Аргументы `1`, `0` и `side` выбирают другие сценарии, R возвращает чистый снимок. Сначала выбрать и подтвердить «Выставить», затем выбрать и подтвердить «Продолжить стойку».
+
+Сборка APK прошла, артефакт расположен в `android/build/outputs/apk/debug/android-debug.apk`. `adb devices -l` вернул пустой список. Физический Android touch и поворот экрана на устройстве остаются непроверенными.
