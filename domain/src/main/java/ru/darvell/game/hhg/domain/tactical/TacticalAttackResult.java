@@ -10,11 +10,16 @@ import java.util.List;
 public final class TacticalAttackResult {
     public enum Outcome { HIT, MISS, INTERRUPTED, NOT_TACTICAL, INVALID_TARGET, TARGET_DEFEATED,
         HUNTER_DEFEATED, OUT_OF_RANGE, BLOCKED, MOVE, REJECTED, MOVED_STILL_TACTICAL, ESCAPED }
-    public enum Kind { ATTACK, MOVE, BREAKOUT }
+    public enum Kind { ATTACK, MOVE, BREAKOUT, TURN, BRACE, HOLD_BRACE, LOWER_SPEAR }
     public enum RejectionReason { NOT_TACTICAL, HUNTER_DEFEATED, INVALID_TARGET, INVALID_DISTANCE,
         BLOCKED_START, BLOCKED_CENTER, BLOCKED_PATH, OCCUPIED_PATH }
     public enum Effect { BITE, HIT }
-    public enum EventType { HIT, ATTACK_MISS, BITE, BITE_MISS, PREPARATION_STARTED, RECOVERY_STARTED, RECOVERY_ENDED, BREAKOUT_MOVED, BREAKOUT_INTERRUPTED, TACTICAL_EXITED }
+    public enum EventType {
+        HIT, ATTACK_MISS, BITE, BITE_MISS, PREPARATION_STARTED, RECOVERY_STARTED, RECOVERY_ENDED,
+        BREAKOUT_MOVED, BREAKOUT_INTERRUPTED, TACTICAL_EXITED, TURN_COMPLETED, BRACE_READY, SPEAR_LOWERED,
+        LEAP_LAUNCHED, LEAP_CANCELLED, LEAP_CONTACT, LEAP_MISSED, LEAP_BLOCKED, ACTION_INTERRUPTED,
+        BREAKOUT_BLOCKED, HUNTER_RECOVERY_STARTED, HUNTER_RECOVERY_ENDED, WOLF_RECOVERY_STARTED, WOLF_RECOVERY_ENDED
+    }
     public static final class Event {
         private final EventType type;
         private final int offset;
@@ -36,6 +41,34 @@ public final class TacticalAttackResult {
     private final Outcome outcome;
     private final int hunterBefore, hunterAfter, creatureBefore, creatureAfter, duration;
     private final List<Effect> effects;
+    private final ClashFacts clash;
+
+    @lombok.Value
+    public static class ClashFacts {
+        SpearClashState before;
+        SpearClashState after;
+        SpearClashState.Result contact;
+        WorldPosition wolfBefore;
+        WorldPosition wolfAfter;
+        List<WorldPosition> route;
+        long contactOffset;
+        long hunterRecovery;
+        long wolfRecovery;
+
+        public ClashFacts(SpearClashState before, SpearClashState after, SpearClashState.Result contact,
+                          WorldPosition wolfBefore, WorldPosition wolfAfter, List<WorldPosition> route,
+                          long contactOffset, long hunterRecovery, long wolfRecovery) {
+            this.before = before;
+            this.after = after;
+            this.contact = contact;
+            this.wolfBefore = wolfBefore;
+            this.wolfAfter = wolfAfter;
+            this.route = Collections.unmodifiableList(new ArrayList<>(route));
+            this.contactOffset = contactOffset;
+            this.hunterRecovery = hunterRecovery;
+            this.wolfRecovery = wolfRecovery;
+        }
+    }
 
     public TacticalAttackResult(Outcome outcome, int hunterBefore, int hunterAfter,
                                int creatureBefore, int creatureAfter, int duration,
@@ -51,6 +84,17 @@ public final class TacticalAttackResult {
                                Kind kind, RejectionReason rejectionReason, int plannedDuration,
                                WorldPosition positionBefore, WorldPosition positionAfter,
                                SceneMode modeBefore, SceneMode modeAfter) {
+        this(outcome, hunterBefore, hunterAfter, creatureBefore, creatureAfter, duration, biteBefore, biteAfter,
+            events, kind, rejectionReason, plannedDuration, positionBefore, positionAfter, modeBefore, modeAfter, null);
+    }
+
+    public TacticalAttackResult(Outcome outcome, int hunterBefore, int hunterAfter,
+                               int creatureBefore, int creatureAfter, int duration,
+                               PrototypeBiteState biteBefore, PrototypeBiteState biteAfter, List<Event> events,
+                               Kind kind, RejectionReason rejectionReason, int plannedDuration,
+                               WorldPosition positionBefore, WorldPosition positionAfter, SceneMode modeBefore,
+                               SceneMode modeAfter, ClashFacts clash) {
+        this.clash = clash;
         this.kind = kind;
         this.rejectionReason = rejectionReason;
         this.plannedDuration = plannedDuration;
@@ -72,6 +116,7 @@ public final class TacticalAttackResult {
         this.duration = duration;
         this.effects = Collections.unmodifiableList(new ArrayList<>(effects));
     }
+    public ClashFacts getClash() { return clash; }
     public Kind getKind() { return kind; }
     public RejectionReason getRejectionReason() { return rejectionReason; }
     public int getPlannedDuration() { return plannedDuration; }

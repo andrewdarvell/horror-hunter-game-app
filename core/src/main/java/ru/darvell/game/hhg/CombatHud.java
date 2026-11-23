@@ -59,6 +59,20 @@ final class CombatHud {
             case PREPARATION_STARTED: return "Подготовка";
             case RECOVERY_STARTED: return "Восстановление";
             case RECOVERY_ENDED: return "Конец восстановления";
+            case TURN_COMPLETED: return "Поворот завершён";
+            case BRACE_READY: return "Рогатина выставлена";
+            case SPEAR_LOWERED: return "Рогатина снята";
+            case LEAP_LAUNCHED: return "Волк прыгнул";
+            case LEAP_CANCELLED: return "Прыжок отменён";
+            case LEAP_CONTACT: return "Контакт прыжка";
+            case LEAP_MISSED: return "Прыжок мимо";
+            case LEAP_BLOCKED: return "Путь прыжка перекрыт";
+            case ACTION_INTERRUPTED: return "Действие прервано";
+            case BREAKOUT_BLOCKED: return "Прорыв перекрыт";
+            case HUNTER_RECOVERY_STARTED: return "Охотник восстанавливается";
+            case HUNTER_RECOVERY_ENDED: return "Охотник готов";
+            case WOLF_RECOVERY_STARTED: return "Волк восстанавливается";
+            case WOLF_RECOVERY_ENDED: return "Волк готов";
             default: throw new IllegalArgumentException("Unknown event");
         }
     }
