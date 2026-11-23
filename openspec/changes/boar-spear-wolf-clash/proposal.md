@@ -93,4 +93,14 @@
 - [First playable wolf enemy proposal, PR #37](https://github.com/andrewdarvell/horror-hunter-game-app/pull/37) — отдельный неслитый scope. Первый проверочный прыжок этой механики **не должен молча реализовать или заменить** полный AI волка. При пересечении интерфейсов оформить решение при planning.
 - Источник направления: [combat-system-spec v0.3](https://github.com/andrewdarvell/horror-hunter-game-design/blob/main/docs/game-design/combat-system-spec.md) и геймдизайн оружия/восстановления.
 
-Этот PR — **только proposal**, без `design.md`, delta-specs, tasks, Java-кода и изменений баланса. После review и merge создать OpenSpec planning PR через `$openspec-update-change boar-spear-wolf-clash`, затем отдельные implementation PR через `$openspec-apply-change` в согласованном порядке.
+## Capabilities
+
+### New Capabilities
+
+- `boar-spear-wolf-clash` — направление охотника, стойка рогатины, проверочный прыжок, геометрический допуск исходов, последствия и воспроизводимый прогноз.
+
+### Modified Capabilities
+
+- `tactical-attack` — выбор единственного источника вражеского контакта при создании сцены и сохранение контрактов обычного режима.
+
+PR #52 добавил исходный proposal. Ответы S1–S9 и решения, требующие согласования владельца, описаны в [design.md](design.md). Критерии и сценарии двух будущих implementation PR приведены в [tasks.md](tasks.md). Planning PR содержит OpenSpec-документацию. Реализация начинается после согласования игровых правил.
