@@ -10,11 +10,16 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import ru.darvell.game.hhg.domain.tactical.TacticalExitResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult;
+import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.Kind;
+import ru.darvell.game.hhg.domain.tactical.Facing;
+import ru.darvell.game.hhg.domain.tactical.SpearClashConfig;
+import ru.darvell.game.hhg.domain.tactical.SpearClashState;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
@@ -65,13 +70,19 @@ public class FirstScreen implements Screen {
     private double attackDisplay;
     private boolean attackJustCreated;
     private String message = "";
+    private Kind selectedSpearAction;
+    private Facing selectedFacing;
+    private TacticalAttackResult spearPreview;
+    private TacticalAttackResult spearPreviewBase;
+    private SpearClashState spearPreviewState;
     private SpriteBatch hudBatch;
     private BitmapFont hudFont;
 
     boolean isBusy() { return transition != null || attackDisplay > 0; }
     boolean isShowingVictory() {
         TacticalAttackResult result = scene.getLastResolution();
-        return attackDisplay > 0 && result != null && result.getKind() == TacticalAttackResult.Kind.ATTACK
+        return attackDisplay > 0 && result != null
+            && (result.getKind() == Kind.ATTACK || result.getClash() != null)
             && result.getModeAfter() == SceneMode.EXPLORATION && result.isCreatureDefeated();
     }
     boolean hasSelectedTarget() { return selectedTarget != null; }
@@ -104,7 +115,81 @@ public class FirstScreen implements Screen {
         int sy = Gdx.graphics.getHeight() - 1 - y;
         return r != null && x >= r.x && x < r.x+r.width && sy >= r.y && sy < r.y+r.height;
     }
-    private void clearSelection() { selectedTarget = null; breakoutSelecting = false; breakoutTarget = null; }
+    private void clearSelection() {
+        selectedTarget = null;
+        breakoutSelecting = false;
+        breakoutTarget = null;
+        clearSpearSelection();
+    }
+
+    private void clearSpearSelection() {
+        selectedSpearAction = null;
+        selectedFacing = null;
+        spearPreview = null;
+        spearPreviewBase = null;
+        spearPreviewState = null;
+    }
+
+    Rectangle spearButtonBounds(int column) {
+        if (!pointerReady || scene.getSpearClashState() == null || scene.getMode() != SceneMode.TACTICAL
+            || scene.getHunterHealth() == 0 || breakoutSelecting || viewport.getScreenHeight() < 170) return null;
+        int width = viewport.getScreenWidth() / 3;
+        if (width < 64) return null;
+        return new Rectangle(viewport.getScreenX() + width * column, viewport.getScreenY() + 54, width, 48);
+    }
+
+    private Kind spearActionAt(int column) {
+        if (column == 1) return Kind.TURN;
+        if (column == 2) return Kind.LOWER_SPEAR;
+        return scene.getSpearClashState().isBraced() ? Kind.HOLD_BRACE : Kind.BRACE;
+    }
+
+    private void selectSpearPreview() {
+        spearPreview = scene.previewSpearAction(selectedSpearAction, selectedFacing);
+        spearPreviewBase = scene.getLastResolution();
+        spearPreviewState = scene.getSpearClashState();
+    }
+
+    String spearPreviewText() {
+        if (selectedSpearAction == Kind.TURN && selectedFacing == null) return "Выберите сторону в соседней клетке";
+        return spearPreview == null ? "" : CombatHud.spearResult(spearPreview);
+    }
+
+    private void spearButton(int column) {
+        Kind action = spearActionAt(column);
+        if (selectedSpearAction != action) {
+            clearSelection();
+            selectedSpearAction = action;
+            if (action != Kind.TURN) selectSpearPreview();
+            return;
+        }
+        if (spearPreview == null) {
+            clearSpearSelection();
+            return;
+        }
+        if (spearPreviewBase != scene.getLastResolution() || !spearPreviewState.equals(scene.getSpearClashState())) {
+            clearSpearSelection();
+            message = "Сцена изменилась · выберите действие заново";
+            return;
+        }
+        if (!spearPreview.isAccepted()) return;
+        TacticalAttackResult result = scene.trySpearAction(action, selectedFacing);
+        if (result.isAccepted()) {
+            clearSelection();
+            showResolution(result);
+            attackDisplay = .24;
+            attackJustCreated = true;
+            selectVisualPositions();
+        }
+    }
+
+    private void selectFacing(CellCoordinates target) {
+        CellCoordinates hunter = scene.getPlacement().getHunterCell();
+        long dx = (long) target.getX() - hunter.getX(), dy = (long) target.getY() - hunter.getY();
+        if (Math.max(Math.abs(dx), Math.abs(dy)) != 1) return;
+        selectedFacing = Facing.along((int) dx, (int) dy);
+        selectSpearPreview();
+    }
     boolean isBreakoutSelecting() { return breakoutSelecting; }
     String breakoutPreviewText() {
         return breakoutTarget == null ? "Выберите конечную клетку · дальность 2–4"
@@ -122,6 +207,12 @@ public class FirstScreen implements Screen {
     }
 
     private void showResolution(TacticalAttackResult result) {
+        if (result.getClash() != null) {
+            String prefix = result.isCreatureDefeated() && result.getModeAfter() == SceneMode.EXPLORATION
+                ? "Победа · " : "";
+            message = prefix + (result.getKind() == Kind.BREAKOUT ? CombatHud.breakout(result) : CombatHud.spearResult(result));
+            return;
+        }
         StringBuilder text = new StringBuilder();
         for (TacticalAttackResult.Event event : result.getEvents()) {
             if (text.length() > 0) text.append(" → ");
@@ -154,6 +245,7 @@ public class FirstScreen implements Screen {
             }
             if (scene.getMode() != SceneMode.TACTICAL || scene.getHunterHealth() == 0) return true;
             if (contains(breakoutButtonBounds(), x, y)) {
+                clearSpearSelection();
                 selectedTarget = null; breakoutSelecting = !breakoutSelecting; breakoutTarget = null; return true;
             }
             if (contains(breakoutCancelBounds(), x, y)) { clearSelection(); return true; }
@@ -165,6 +257,12 @@ public class FirstScreen implements Screen {
                     selectVisualPositions();
                 } else message = CombatHud.breakout(result);
                 return true;
+            }
+            for (int column = 0; column < 3; column++) {
+                if (contains(spearButtonBounds(column), x, y)) {
+                    spearButton(column);
+                    return true;
+                }
             }
             if (inAttackButton(x, y)) {
                 TacticalAttackResult result = scene.tryAttackCreature(selectedTarget);
@@ -180,6 +278,8 @@ public class FirstScreen implements Screen {
                 Gdx.graphics.getWidth(), Gdx.graphics.getHeight(), pointerReady);
             if (target == null) return true;
             if (breakoutSelecting) { breakoutTarget = target; return true; }
+            if (selectedSpearAction == Kind.TURN) { selectFacing(target); return true; }
+            clearSpearSelection();
             if (scene.getPlacement().creatureCell().filter(target::equals).isPresent()) {
                 selectedTarget = target.equals(selectedTarget) ? null : target;
                 return true;
@@ -435,9 +535,47 @@ public class FirstScreen implements Screen {
         }
         if (scene.getPlacement() != null) {
             shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+            drawSpearOverlay();
             drawOccupiedCell(scene.getPlacement().getHunterCell(), Color.GOLDENROD);
             scene.getPlacement().creatureCell().ifPresent(cell -> drawOccupiedCell(cell, Color.CYAN));
             shapeRenderer.end();
+        }
+    }
+
+    private void drawSpearOverlay() {
+        SpearClashState clash = scene.getSpearClashState();
+        if (clash == null || scene.getHunterHealth() == 0) return;
+        Facing facing = selectedFacing == null ? clash.getFacing() : selectedFacing;
+        float x = (float) visualHunterPosition.getX();
+        float y = (float) visualHunterPosition.getY();
+        float angle = facing.ordinal() * 45f;
+        float cellSize = (float) tacticalGrid.getCellSize();
+        float radians = angle * MathUtils.degreesToRadians;
+        shapeRenderer.setColor(Color.GOLD);
+        shapeRenderer.line(x, y, x + cellSize * MathUtils.cos(radians), y + cellSize * MathUtils.sin(radians));
+        if (clash.isBraced()) {
+            int halfAngle = SpearClashConfig.HALF_ANGLE_DEGREES;
+            shapeRenderer.arc(x, y, SpearClashConfig.MAX_REACH_CELLS * cellSize, angle - halfAngle, 2 * halfAngle, 16);
+            shapeRenderer.arc(x, y, SpearClashConfig.MIN_REACH_CELLS * cellSize, angle - halfAngle, 2 * halfAngle, 16);
+        }
+        if (clash.getJumpTarget() != null) {
+            shapeRenderer.setColor(Color.CYAN);
+            WorldPosition target = clash.getJumpTarget();
+            shapeRenderer.line((float) visualCreaturePosition.getX(), (float) visualCreaturePosition.getY(),
+                (float) target.getX(), (float) target.getY());
+        }
+        TacticalAttackResult latest = scene.getLastResolution();
+        if (latest != null && latest.getClash() != null && attackDisplay > 0
+            && latest.getClash().getContactOffset() <= latest.getDuration() * 2L * (1 - attackDisplay / .24)) {
+            shapeRenderer.setColor(Color.CYAN);
+            WorldPosition previous = null;
+            for (WorldPosition node : latest.getClash().getRoute()) {
+                if (previous != null) {
+                    shapeRenderer.line((float) previous.getX(), (float) previous.getY(),
+                        (float) node.getX(), (float) node.getY());
+                }
+                previous = node;
+            }
         }
     }
 
@@ -539,15 +677,41 @@ public class FirstScreen implements Screen {
             top = drawHudLine(available == TacticalAttackResult.Outcome.HIT
                 ? CombatHud.risk(scene.previewAttackCreature(selectedTarget)) : reason(available), left, top, textWidth);
         }
+        if (scene.getSpearClashState() != null) {
+            drawSpearButtons();
+            top = drawHudLine(spearPreviewText(), left, top, textWidth);
+        }
         hudFont.setColor(scene.getBiteState() != null
             && scene.getBiteState().getPhase() == ru.darvell.game.hhg.domain.tactical.PrototypeBiteState.Phase.PREPARING
             ? Color.ORANGE : Color.CYAN);
-        top = drawHudLine(CombatHud.phase(scene), left, top, textWidth);
+        TacticalAttackResult latest = scene.getLastResolution();
+        String phase = attackDisplay > 0 && latest != null && latest.getClash() != null
+            ? CombatHud.spearPlayback(latest, 1 - attackDisplay / .24) : CombatHud.phase(scene);
+        top = drawHudLine(phase, left, top, textWidth);
         hudFont.setColor(Color.WHITE);
         top = drawHudLine("HP: " + scene.getHunterHealth() + "/4 · Цель: " + scene.getCreatureHealth()
             + "/2 · Время: " + scene.getTacticalTimeUnits(), left, top, textWidth);
         drawHudLine(message, left, top, textWidth);
         hudBatch.end();
+    }
+
+    private void drawSpearButtons() {
+        for (int column = 0; column < 3; column++) {
+            Rectangle bounds = spearButtonBounds(column);
+            if (bounds == null) return;
+            Kind action = spearActionAt(column);
+            boolean selected = action == selectedSpearAction;
+            boolean available = action == Kind.TURN || scene.spearActionQuanta(action, null) > 0;
+            hudFont.setColor(!isBusy() && available ? Color.YELLOW : Color.LIGHT_GRAY);
+            String label;
+            if (selected && spearPreview != null && spearPreview.isAccepted()) label = "Подтвердить";
+            else if (selected && action == Kind.TURN) label = "Выбор стороны";
+            else if (action == Kind.TURN) label = "Повернуться";
+            else if (action == Kind.LOWER_SPEAR) label = "Снять";
+            else if (action == Kind.HOLD_BRACE) label = "Продолжить стойку";
+            else label = "Выставить";
+            drawModeLine("[ " + label + " ]", bounds, 32);
+        }
     }
 
     private void drawModeLine(String text, Rectangle bounds, float offset) {
@@ -557,7 +721,7 @@ public class FirstScreen implements Screen {
 
     private float drawHudLine(String text, float left, float top, float width) {
         GlyphLayout layout = new GlyphLayout(hudFont, text, Color.WHITE, width, 8, true);
-        if (top - layout.height < viewport.getScreenY() + (breakoutSelecting ? 114 : 60)) return top;
+        if (top - layout.height < viewport.getScreenY() + (breakoutSelecting || spearButtonBounds(0) != null ? 114 : 60)) return top;
         return top - hudFont.draw(hudBatch, text, left, top, width, 8, true).height - 12;
     }
 
