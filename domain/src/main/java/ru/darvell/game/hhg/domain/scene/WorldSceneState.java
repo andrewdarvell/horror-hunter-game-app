@@ -15,6 +15,7 @@ import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.EventType;
 import ru.darvell.game.hhg.domain.tactical.PrototypeBiteState;
 import ru.darvell.game.hhg.domain.tactical.PrototypeBiteState.Phase;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.LongToDoubleFunction;
@@ -27,12 +28,15 @@ import ru.darvell.game.hhg.domain.tactical.Facing;
 import ru.darvell.game.hhg.domain.tactical.SpearClashConfig;
 import ru.darvell.game.hhg.domain.tactical.SpearClashState;
 import ru.darvell.game.hhg.domain.tactical.SpearClashState.WolfPhase;
+import ru.darvell.game.hhg.domain.tactical.SpearClashState.StopReason;
+import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.ClashFact;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.ClashFacts;
 import ru.darvell.game.hhg.domain.tactical.TacticalPlacement;
 import ru.darvell.game.hhg.domain.world.WorldGeometry;
 import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 import static ru.darvell.game.hhg.domain.combat.timeline.CombatTimeline.QUANTA_PER_TICK;
+import static ru.darvell.game.hhg.domain.tactical.SpearClashConfig.GUARD_LIMIT_QUANTA;
 
 /** Владеет независимыми копиями участников; наружу выдаёт только значения состояния. */
 public final class WorldSceneState {
@@ -62,12 +66,11 @@ public final class WorldSceneState {
 
     public WorldSceneState(HunterState hunter, CreaturePatrolState creature, TacticalGrid grid,
                            WorldGeometry geometry, SpearClashConfig spearConfig) {
-        this(hunter, creature, grid, geometry, spearConfig, 0,
-            spearConfig == null ? null : cursor -> SpearClash.sample(spearConfig.getSeed(), cursor));
+        this(hunter, creature, grid, geometry, spearConfig, 0, null, WolfTurn.ready(false, false));
     }
 
     WorldSceneState(HunterState hunter, CreaturePatrolState creature, TacticalGrid grid, WorldGeometry geometry,
-                    SpearClashConfig spearConfig, long now, LongToDoubleFunction clashSample) {
+                    SpearClashConfig spearConfig, long now, LongToDoubleFunction clashSample, WolfTurn initialTurn) {
         if (hunter == null || creature == null || grid == null || geometry == null) {
             throw new IllegalArgumentException("Scene components must be present");
         }
@@ -75,9 +78,10 @@ public final class WorldSceneState {
         this.geometry = geometry;
         this.spearConfig = spearConfig;
         this.spearClash = spearConfig == null ? null : new SpearClash(grid, geometry);
-        this.clashSample = clashSample;
+        this.clashSample = clashSample != null || spearConfig == null ? clashSample
+            : cursor -> SpearClash.sample(spearConfig.getSeed(), cursor);
         ClashTiming clash = spearConfig == null ? null
-            : new ClashTiming(spearConfig.getFacing(), false, 0, LeapTiming.UNUSED, 0);
+            : new ClashTiming(spearConfig.getFacing(), false, initialTurn, 0);
         state = new SceneSnapshot(hunter.copy(), creature.copy(), SceneMode.EXPLORATION, now,
             null, null, false, false, clash);
     }
@@ -184,10 +188,12 @@ public final class WorldSceneState {
                     : BiteTiming.READY;
             }
             ClashTiming clash = before.clash;
-            if (clash != null && clash.leap == LeapTiming.UNUSED) {
-                SpearClash.Plan plan = preparedCreature.isDefeated() || preparedHunter.isDefeated()
-                    ? null : spearClash.plan(preparedHunter.getPosition(), preparedCreature.getPosition());
-                clash = clash.withLeap(plan == null ? LeapTiming.SPENT : initialLeap(plan, before.nowQuanta));
+            if (clash != null && clash.wolf.getPhase() == WolfPhase.READY
+                && !preparedCreature.isDefeated() && !preparedHunter.isDefeated()) {
+                WolfTurn next = chooseWolfTurn(clash.wolf, preparedHunter, preparedCreature, clash.facing,
+                    false, true, before.nowQuanta);
+                // An entry has no command journal. Report a blocked route on the first paid action.
+                if (next.getPhase() != WolfPhase.READY) clash = clash.withWolf(next);
             }
             SceneSnapshot prepared = new SceneSnapshot(preparedHunter, preparedCreature, SceneMode.TACTICAL,
                 before.nowQuanta, preparedBite, before.lastResolution, before.detected, before.engaged, clash);
@@ -201,15 +207,37 @@ public final class WorldSceneState {
         return result.getOutcome();
     }
 
-    private LeapTiming initialLeap(SpearClash.Plan plan, long now) {
-        long launch = Math.addExact(now, spearConfig.getPreparationQuanta());
-        return new LeapTiming(WolfPhase.PREPARING, plan, launch, Math.addExact(launch, spearConfig.getFlightQuanta()));
+    private WolfTurn chooseWolfTurn(WolfTurn current, HunterState hunter, CreaturePatrolState wolf,
+                                    Facing facing, boolean braced, boolean mayAttack, long now) {
+        if (braced && !current.isFlankUsed() && mayAttack) {
+            WorldPosition flank = spearClash.stepTarget(hunter, wolf, facing, true);
+            if (flank != null) return scheduleStep(current, wolf, flank, now, true);
+        }
+        SpearClash.Plan plan = spearClash.plan(hunter.getPosition(), wolf.getPosition());
+        if (spearClash.canLaunch(plan, hunter, wolf, facing, braced)) {
+            if (!mayAttack) return WolfTurn.ready(current.isFlankUsed(), false);
+            long launch = Math.addExact(now, spearConfig.getPreparationQuanta());
+            return WolfTurn.preparing(plan, launch, Math.addExact(launch, spearConfig.getFlightQuanta()),
+                current.isFlankUsed());
+        }
+        WorldPosition closer = spearClash.stepTarget(hunter, wolf, facing, false);
+        return closer == null ? WolfTurn.ready(current.isFlankUsed(), true)
+            : scheduleStep(current, wolf, closer, now, false);
+    }
+
+    private WolfTurn scheduleStep(WolfTurn current, CreaturePatrolState wolf, WorldPosition target,
+                                  long now, boolean flank) {
+        return WolfTurn.stepping(new WolfTurn.Step(wolf.getPosition(), target, now, flank),
+            Math.addExact(now, spearConfig.getWolfStepQuanta()), current.isFlankUsed());
     }
 
     public TacticalExitResult exitTacticalAvailability() {
         if (state.mode != SceneMode.TACTICAL) return TacticalExitResult.NOT_TACTICAL;
         if (state.hunter.isDefeated()) return TacticalExitResult.HUNTER_DEFEATED;
-        if (state.creature.canDetect(state.hunter.getPosition()) || canContact(state.hunter, state.creature)) {
+        ClashTiming clash = state.clash;
+        boolean jumpThreat = clash != null && spearClash.canLaunch(clash.wolf.getLeap(), state.hunter,
+            state.creature, clash.facing, clash.braced);
+        if (jumpThreat || state.creature.canDetect(state.hunter.getPosition()) || canContact(state.hunter, state.creature)) {
             return TacticalExitResult.ACTIVE_THREAT;
         }
         return TacticalExitResult.SUCCESS;
@@ -228,16 +256,20 @@ public final class WorldSceneState {
     /** Проверки и подготовка предшествуют публикации в однопоточной сцене. */
     public TacticalMoveResult tryMoveHunterTo(CellCoordinates target) {
         if (state.mode != SceneMode.TACTICAL) return TacticalMoveResult.NOT_TACTICAL;
-        HunterState hunter = state.hunter;
-        CreaturePatrolState creature = state.creature;
+        TacticalMoveResult validation = validateMove(target, state.hunter, state.creature);
+        if (validation == TacticalMoveResult.SUCCESS) resolve(Kind.MOVE, target, QUANTA_PER_TICK, true);
+        return validation;
+    }
+
+    private TacticalMoveResult validateMove(CellCoordinates target, HunterState hunter, CreaturePatrolState creature) {
         if (hunter.isDefeated()) return TacticalMoveResult.HUNTER_DEFEATED;
         if (target == null) return TacticalMoveResult.INVALID_INPUT;
-        CellCoordinates current = state.placement.getHunterCell();
+        CellCoordinates current = grid.worldToCell(hunter.getPosition());
         if (target.equals(current)) return TacticalMoveResult.SAME_CELL;
         long dx = (long) target.getX() - current.getX();
         long dy = (long) target.getY() - current.getY();
         if (Math.max(Math.abs(dx), Math.abs(dy)) != 1) return TacticalMoveResult.NOT_ADJACENT;
-        if (state.placement.creatureCell().filter(target::equals).isPresent()) return TacticalMoveResult.OCCUPIED;
+        if (!creature.isDefeated() && target.equals(grid.worldToCell(creature.getPosition()))) return TacticalMoveResult.OCCUPIED;
         WorldPosition center = grid.cellToWorldCenter(target);
         double cellX = Math.floor((center.getX() - grid.getOriginX()) / grid.getCellSize());
         double cellY = Math.floor((center.getY() - grid.getOriginY()) / grid.getCellSize());
@@ -250,7 +282,6 @@ public final class WorldSceneState {
             creature.isDefeated() ? null : creature.getPosition(), creature.getRadius())) {
             return TacticalMoveResult.BLOCKED_PATH;
         }
-        resolve(Kind.MOVE, target, QUANTA_PER_TICK, true);
         return TacticalMoveResult.SUCCESS;
     }
 
@@ -280,12 +311,10 @@ public final class WorldSceneState {
 
     public long spearActionQuanta(Kind kind, Facing direction) {
         ClashTiming clash = state.clash;
-        if (kind == null || clash == null || state.mode != SceneMode.TACTICAL || state.hunter.isDefeated()
-            || clash.hunterRecovery > state.nowQuanta) return 0;
+        if (kind == null || clash == null || state.mode != SceneMode.TACTICAL || state.hunter.isDefeated()) return 0;
         switch (kind) {
             case BRACE: return clash.braced ? 0 : spearConfig.getBraceQuanta();
             case LOWER_SPEAR: return clash.braced ? QUANTA_PER_TICK : 0;
-            case HOLD_BRACE: return clash.braced && clash.leap.hasContact() ? clash.leap.contact - state.nowQuanta : 0;
             case TURN: return direction == null ? 0 : QUANTA_PER_TICK * clash.facing.stepsTo(direction);
             default: return 0;
         }
@@ -419,6 +448,7 @@ public final class WorldSceneState {
         private final Facing direction;
         private final boolean needsFirstBoundary;
         private final List<Event> events = new ArrayList<>();
+        private final List<ClashFact> clashFacts = new ArrayList<>();
         private HunterState hunter;
         private CreaturePatrolState creature;
         private BiteTiming bite;
@@ -426,13 +456,16 @@ public final class WorldSceneState {
         private Outcome strike = Outcome.INTERRUPTED;
         private Facing facing;
         private boolean braced;
-        private LeapTiming leap;
+        private WolfTurn wolf;
         private long hunterRecovery;
         private long cursor;
         private boolean interrupted;
         private RejectionReason lateBlock;
-        private SpearClash.Impact impact;
-        private long contactOffset;
+        private long guardStart = -1;
+        private boolean terminal;
+        private boolean flankFinished;
+        private boolean leapResolved;
+        private StopReason stopReason;
 
         private TacticalTransition(SceneSnapshot before, Kind kind, CellCoordinates target, Facing direction,
                                    long duration) {
@@ -447,27 +480,40 @@ public final class WorldSceneState {
             needsFirstBoundary = kind == Kind.BREAKOUT || bite == BiteTiming.READY;
             if (before.clash != null) {
                 facing = before.clash.facing;
-                braced = kind == Kind.HOLD_BRACE && before.clash.braced;
-                leap = before.clash.leap;
+                wolf = before.clash.wolf;
                 cursor = before.clash.cursor;
+                if (before.clash.braced) record(EventType.STANCE_RELEASED);
+                if (wolf.getPhase() == WolfPhase.READY) planWolf(before.nowQuanta);
             }
         }
 
         private boolean atBoundary() {
             if (before.clash == null) return offset == duration || hunter.isDefeated();
-            return hunter.isDefeated() || creature.isDefeated() && (strike == Outcome.HIT || impact != null)
-                || !commandActive() && hunterRecovery == 0;
+            if (terminal) stopReason = StopReason.TERMINAL;
+            else if (commandActive() || hunterRecovery > 0) return false;
+            else if (!braced) stopReason = StopReason.HUNTER_READY;
+            else if (leapResolved) stopReason = StopReason.LEAP_RESOLVED;
+            else if (flankFinished && newSideThreat()) stopReason = StopReason.SIDE_THREAT;
+            else if (wolf.getDeadline() == 0) stopReason = StopReason.NO_ROUTE;
+            else if (offset - guardStart >= GUARD_LIMIT_QUANTA
+                || (wolf.getDeadline() - before.nowQuanta) - guardStart > GUARD_LIMIT_QUANTA) {
+                stopReason = StopReason.GUARD_LIMIT;
+            }
+            return stopReason != null;
         }
 
         private boolean commandActive() { return !interrupted && offset < duration; }
 
         private Long nextDeadline() {
             if (before.clash != null) {
-                long next = commandActive() ? duration : hunterRecovery;
-                if (leap.deadline != 0) next = Math.min(next, leap.deadline - before.nowQuanta);
+                long next = commandActive() ? duration : Long.MAX_VALUE;
+                if (wolf.getDeadline() != 0) next = Math.min(next, wolf.getDeadline() - before.nowQuanta);
                 if (hunterRecovery > 0) next = Math.min(next, hunterRecovery);
                 if (kind == Kind.BREAKOUT && commandActive() && offset < QUANTA_PER_TICK) {
                     next = Math.min(next, QUANTA_PER_TICK);
+                }
+                if (next == Long.MAX_VALUE || next <= offset) {
+                    throw new IllegalStateException("Expected a future tactical deadline");
                 }
                 return next;
             }
@@ -478,10 +524,10 @@ public final class WorldSceneState {
         }
 
         private TacticalTransition resolveBatch(long next) {
-            Math.addExact(before.nowQuanta, next);
+            long now = Math.addExact(before.nowQuanta, next);
             offset = next;
             if (before.clash != null) {
-                resolveClashBatch(Math.addExact(before.nowQuanta, offset));
+                resolveClashBatch(now);
                 return this;
             }
 
@@ -503,85 +549,152 @@ public final class WorldSceneState {
         }
 
         private void resolveClashBatch(long now) {
-            if (!interrupted && offset == duration) {
-                switch (kind) {
-                    case ATTACK:
-                        resolveStrike();
-                        if (creature.isDefeated() && leap.hasContact()) {
-                            leap = LeapTiming.SPENT;
-                            record(EventType.LEAP_CANCELLED);
-                        }
-                        break;
-                    case TURN: facing = direction; record(EventType.TURN_COMPLETED); break;
-                    case BRACE: braced = true; record(EventType.BRACE_READY); break;
-                    case LOWER_SPEAR: record(EventType.SPEAR_LOWERED); break;
+            flankFinished = false;
+            leapResolved = false;
+            if (!interrupted && offset == duration) completeHunterCommand();
+            if (terminal) return;
+
+            boolean blockedStep = false;
+            if (wolf.getDeadline() == now) {
+                switch (wolf.getPhase()) {
+                    case STEPPING: blockedStep = !finishWolfStep(); break;
+                    case PREPARING: wolf = wolf.launch(); record(EventType.LEAP_LAUNCHED); break;
+                    case IN_FLIGHT: resolveLeap(now); break;
                     default: break;
                 }
             }
-            if (creature.isDefeated() && strike == Outcome.HIT) return;
-            if (leap.deadline == now) {
-                if (leap.phase == WolfPhase.PREPARING) {
-                    leap = new LeapTiming(WolfPhase.IN_FLIGHT, leap.plan, leap.contact, leap.contact);
-                    record(EventType.LEAP_LAUNCHED);
-                } else if (leap.phase == WolfPhase.IN_FLIGHT) {
-                    resolveLeap(now);
-                }
-            }
-            if (hunter.isDefeated() || creature.isDefeated() && impact != null) return;
+            if (terminal) return;
+
             if (kind == Kind.BREAKOUT && offset == QUANTA_PER_TICK && !interrupted) {
                 lateBlock = breakoutRejection(target, hunter, creature);
-                if (lateBlock == null) {
-                    applyBreakoutMove();
-                } else {
+                if (lateBlock == null) applyBreakoutMove();
+                else {
                     interrupted = true;
                     record(EventType.BREAKOUT_BLOCKED);
                 }
             }
-            if (hunterRecovery == offset) {
+            if (hunterRecovery > 0 && hunterRecovery == offset) {
                 hunterRecovery = 0;
                 record(EventType.HUNTER_RECOVERY_ENDED);
             }
-            if (leap.phase == WolfPhase.RECOVERING && leap.deadline == now) {
-                leap = LeapTiming.SPENT;
+            if (wolf.getPhase() == WolfPhase.RECOVERING && wolf.getDeadline() == now) {
+                wolf = WolfTurn.ready(false, false);
                 record(EventType.WOLF_RECOVERY_ENDED);
+            }
+            if (kind == Kind.BREAKOUT && !interrupted && offset == duration
+                && breakoutEndSafe(creature.canDetect(hunter.getPosition()))) {
+                terminal = true;
+                return;
+            }
+            if (!blockedStep && wolf.getPhase() == WolfPhase.READY) planWolf(now);
+        }
+
+        private void completeHunterCommand() {
+            switch (kind) {
+                case ATTACK:
+                    resolveStrike();
+                    if (creature.isDefeated()) {
+                        boolean cancelled = wolf.getLeap() != null;
+                        wolf = WolfTurn.ready(false, false);
+                        terminal = true;
+                        if (cancelled) record(EventType.LEAP_CANCELLED);
+                    }
+                    break;
+                case TURN: facing = direction; record(EventType.TURN_COMPLETED); break;
+                case BRACE: braced = true; guardStart = offset; record(EventType.BRACE_READY); break;
+                case LOWER_SPEAR: record(EventType.SPEAR_LOWERED); break;
+                default: break;
             }
         }
 
+        private void planWolf(long now) {
+            if (creature.isDefeated() || hunter.isDefeated()) return;
+            WolfTurn previous = wolf;
+            wolf = chooseWolfTurn(previous, hunter, creature, facing, braced, hunterRecovery == 0, now);
+            switch (wolf.getPhase()) {
+                case STEPPING:
+                    record(wolf.getStep().isFlank() ? EventType.WOLF_FLANK_STARTED : EventType.WOLF_STEP_STARTED);
+                    break;
+                case PREPARING: record(EventType.LEAP_PREPARATION_STARTED); break;
+                case READY:
+                    if (wolf.isNoRoute() && !previous.isNoRoute()) record(EventType.WOLF_NO_ROUTE);
+                    break;
+                default: break;
+            }
+        }
+
+        private boolean finishWolfStep() {
+            WolfTurn.Step step = wolf.getStep();
+            wolf = WolfTurn.ready(wolf.isFlankUsed(), false);
+            if (!spearClash.canStep(step.getFrom(), step.getTo(), hunter, creature)) {
+                record(EventType.WOLF_STEP_BLOCKED);
+                return false;
+            }
+            creature = creature.withTacticalPosition(step.getTo());
+            flankFinished = step.isFlank();
+            recordClashFact(EventType.WOLF_MOVED, step.getStart() - before.nowQuanta,
+                Arrays.asList(step.getFrom(), step.getTo()), null, 0, 0);
+            return true;
+        }
+
+        private boolean newSideThreat() {
+            SpearClash.Plan plan = wolf.getLeap();
+            if (wolf.getPhase() != WolfPhase.PREPARING || plan.isLunge() || SpearClash.covers(facing, plan.getLane())) {
+                return false;
+            }
+            long untilContact = wolf.getContact() - before.nowQuanta - offset;
+            if (untilContact >= QUANTA_PER_TICK) {
+                CellCoordinates home = grid.worldToCell(hunter.getPosition());
+                for (Facing candidate : Facing.values()) {
+                    CellCoordinates step = SpearClash.shift(home, candidate.getDx(), candidate.getDy());
+                    if (step != null && validateMove(step, hunter, creature) == TacticalMoveResult.SUCCESS) return true;
+                }
+            }
+            if (untilContact >= 2 * QUANTA_PER_TICK && canContact(hunter, creature)) return true;
+            for (Facing candidate : Facing.values()) {
+                if (SpearClash.covers(candidate, plan.getLane())
+                    && QUANTA_PER_TICK * facing.stepsTo(candidate) + spearConfig.getBraceQuanta() <= untilContact) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void resolveLeap(long now) {
-            impact = spearClash.resolve(leap.plan, hunter, creature, facing, braced, spearConfig.getWeights(), () -> {
-                double sample = clashSample.applyAsDouble(cursor);
-                cursor = Math.incrementExact(cursor);
-                return sample;
-            });
-            contactOffset = offset;
+            SpearClash.Impact impact = spearClash.resolve(wolf.getLeap(), hunter, creature, facing, braced,
+                spearConfig.getWeights(), () -> {
+                    double sample = clashSample.applyAsDouble(cursor);
+                    cursor = Math.incrementExact(cursor);
+                    return sample;
+                });
+            leapResolved = true;
             creature = creature.withTacticalPosition(SpearClash.last(impact.getPath())).withDamage(impact.getWolfDamage());
             hunter = hunter.withDamage(impact.getHunterDamage());
             SpearClashState.Result result = impact.getResult();
+            EventType contactType;
             switch (result) {
-                case MISS: record(EventType.LEAP_MISSED); break;
-                case BLOCKED: record(EventType.LEAP_BLOCKED); break;
-                default:
-                    braced = false;
-                    record(EventType.LEAP_CONTACT);
-                    break;
+                case MISS: contactType = EventType.LEAP_MISSED; break;
+                case BLOCKED: contactType = EventType.LEAP_BLOCKED; break;
+                default: braced = false; contactType = EventType.LEAP_CONTACT; break;
             }
+            recordClashFact(contactType, offset - spearConfig.getFlightQuanta(), impact.getPath(), result,
+                impact.getHunterRecovery(), impact.getWolfRecovery());
             if (result == SpearClashState.Result.HIT && commandActive()) {
                 interrupted = true;
                 record(kind == Kind.BREAKOUT ? EventType.BREAKOUT_INTERRUPTED : EventType.ACTION_INTERRUPTED);
             }
-            if (!hunter.isDefeated() && !creature.isDefeated() && impact.getHunterRecovery() > 0) {
+            if (hunter.isDefeated() || creature.isDefeated()) {
+                terminal = true;
+                wolf = WolfTurn.ready(false, false);
+                return;
+            }
+            if (impact.getHunterRecovery() > 0) {
                 Math.addExact(now, impact.getHunterRecovery());
                 hunterRecovery = Math.max(hunterRecovery, Math.addExact(offset, impact.getHunterRecovery()));
                 record(EventType.HUNTER_RECOVERY_STARTED);
             }
-            if (!creature.isDefeated()) {
-                // The result retains recovery on terminal defeat; the snapshot has no future action.
-                long deadline = hunter.isDefeated() ? 0 : Math.addExact(now, impact.getWolfRecovery());
-                leap = deadline == 0 ? LeapTiming.SPENT : new LeapTiming(WolfPhase.RECOVERING, null, deadline, 0);
-                record(EventType.WOLF_RECOVERY_STARTED);
-            } else {
-                leap = LeapTiming.SPENT;
-            }
+            wolf = WolfTurn.recovering(Math.addExact(now, impact.getWolfRecovery()), wolf.isFlankUsed());
+            record(EventType.WOLF_RECOVERY_STARTED);
         }
 
         private void resolveStrike() {
@@ -624,7 +737,24 @@ public final class WorldSceneState {
         }
 
         private void record(EventType type) {
-            events.add(new Event(type, toResultUnits(offset)));
+            if (before.clash == null) events.add(new Event(type, toResultUnits(offset)));
+            else recordClashFact(type, offset, Collections.emptyList(), null, 0, 0);
+        }
+
+        private void recordClashFact(EventType type, long motionStart, List<WorldPosition> route,
+                                     SpearClashState.Result contact, long hunterDuration, long wolfDuration) {
+            if (offset > 0) events.add(new Event(type, toResultUnits(offset)));
+            long now = Math.addExact(before.nowQuanta, offset);
+            clashFacts.add(new ClashFact(type, offset, clashTiming().view(now, Math.max(0, hunterRecovery - offset)),
+                motionStart, route, contact, hunterDuration, wolfDuration));
+        }
+
+        private ClashTiming clashTiming() {
+            return new ClashTiming(facing, braced, wolf, cursor);
+        }
+
+        private boolean breakoutEndSafe(boolean endpointDetected) {
+            return !canEngage(hunter, creature, endpointDetected) && !canContact(hunter, creature);
         }
 
         private SceneSnapshot finish() {
@@ -632,13 +762,13 @@ public final class WorldSceneState {
             boolean detected = before.detected;
             boolean engaged = before.engaged;
             Outcome outcome = kind == Kind.ATTACK ? strike : interrupted ? Outcome.INTERRUPTED : Outcome.MOVE;
-            boolean victory = creature.isDefeated() && (strike == Outcome.HIT || impact != null);
+            boolean victory = creature.isDefeated() && (strike == Outcome.HIT || leapResolved);
             if (kind == Kind.BREAKOUT) {
                 if (hunter.isDefeated() || interrupted) {
                     outcome = Outcome.INTERRUPTED;
                 } else {
                     boolean endpointDetected = creature.canDetect(hunter.getPosition());
-                    boolean safe = !canEngage(hunter, creature, endpointDetected) && !canContact(hunter, creature);
+                    boolean safe = breakoutEndSafe(endpointDetected);
                     outcome = safe ? Outcome.ESCAPED : Outcome.MOVED_STILL_TACTICAL;
                     if (safe) detected = endpointDetected;
                 }
@@ -647,19 +777,21 @@ public final class WorldSceneState {
                 mode = SceneMode.EXPLORATION;
                 if (victory) detected = false;
                 engaged = false;
-                if (leap != null && leap.hasContact()) record(EventType.LEAP_CANCELLED);
+                if (wolf != null) {
+                    boolean cancelled = wolf.getLeap() != null;
+                    wolf = wolf.afterExit();
+                    braced = false;
+                    if (cancelled) record(EventType.LEAP_CANCELLED);
+                }
                 record(EventType.TACTICAL_EXITED);
             }
 
             long now = Math.addExact(before.nowQuanta, offset);
             // При поражении охотника остаток фазы остаётся фактом результата, без будущего дедлайна.
             BiteTiming scheduled = bite == null || hunter.isDefeated() ? null : bite.rebase(before.nowQuanta);
-            ClashTiming clash = before.clash == null ? null : new ClashTiming(facing, braced, 0, leap, cursor);
-            if (clash != null && mode == SceneMode.EXPLORATION) clash = clash.afterExit();
-            ClashFacts facts = clash == null ? null : new ClashFacts(before.clashView(), clash.view(now),
-                impact == null ? null : impact.getResult(), before.creature.getPosition(), creature.getPosition(),
-                impact == null ? Collections.emptyList() : impact.getPath(),
-                contactOffset, impact == null ? 0 : impact.getHunterRecovery(), impact == null ? 0 : impact.getWolfRecovery());
+            ClashTiming clash = before.clash == null ? null : clashTiming();
+            ClashFacts facts = clash == null ? null : new ClashFacts(before.clashView(), clash.view(now, 0),
+                before.creature.getPosition(), creature.getPosition(), clashFacts, stopReason);
             TacticalAttackResult result = new TacticalAttackResult(outcome,
                 before.hunter.getHealth(), hunter.getHealth(), before.creature.getHealth(), creature.getHealth(),
                 toResultUnits(offset), before.biteView(), bite == null ? null : bite.viewAt(offset), events,
@@ -690,36 +822,25 @@ public final class WorldSceneState {
     }
 
     @Value
-    private static class LeapTiming {
-        static final LeapTiming UNUSED = new LeapTiming(WolfPhase.UNUSED, null, 0, 0);
-        static final LeapTiming SPENT = new LeapTiming(WolfPhase.SPENT, null, 0, 0);
-        WolfPhase phase;
-        SpearClash.Plan plan;
-        long deadline;
-        long contact;
-
-        boolean hasContact() { return plan != null; }
-    }
-
-    @Value
     private static class ClashTiming {
         Facing facing;
         boolean braced;
-        long hunterRecovery;
-        LeapTiming leap;
+        WolfTurn wolf;
         long cursor;
 
-        ClashTiming withLeap(LeapTiming replacement) {
-            return new ClashTiming(facing, braced, hunterRecovery, replacement, cursor);
+        ClashTiming withWolf(WolfTurn replacement) {
+            return new ClashTiming(facing, braced, replacement, cursor);
         }
 
         ClashTiming afterExit() {
-            return new ClashTiming(facing, false, 0, leap.hasContact() ? LeapTiming.SPENT : leap, cursor);
+            return new ClashTiming(facing, false, wolf.afterExit(), cursor);
         }
 
-        SpearClashState view(long now) {
-            return new SpearClashState(facing, braced, Math.max(0, hunterRecovery - now), leap.phase,
-                leap.deadline == 0 ? 0 : leap.deadline - now, leap.plan == null ? null : leap.plan.getTarget(), cursor);
+        SpearClashState view(long now, long hunterRemaining) {
+            return new SpearClashState(facing, braced, hunterRemaining, wolf.getPhase(),
+                wolf.getDeadline() == 0 ? 0 : Math.max(0, wolf.getDeadline() - now),
+                wolf.getLeap() == null ? null : wolf.getLeap().getTarget(),
+                wolf.getStep() == null ? null : wolf.getStep().getTo(), wolf.isFlankUsed(), wolf.isNoRoute(), cursor);
         }
     }
 
@@ -756,7 +877,7 @@ public final class WorldSceneState {
                 : new TacticalPlacement(hunterCell, grid.worldToCell(creature.getPosition()));
         }
 
-        private SpearClashState clashView() { return clash == null ? null : clash.view(nowQuanta); }
+        private SpearClashState clashView() { return clash == null ? null : clash.view(nowQuanta, 0); }
 
         private PrototypeBiteState biteView() {
             if (biteTiming != null) return biteTiming.viewAt(nowQuanta);

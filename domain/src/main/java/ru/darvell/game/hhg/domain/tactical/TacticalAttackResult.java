@@ -10,7 +10,7 @@ import java.util.List;
 public final class TacticalAttackResult {
     public enum Outcome { HIT, MISS, INTERRUPTED, NOT_TACTICAL, INVALID_TARGET, TARGET_DEFEATED,
         HUNTER_DEFEATED, OUT_OF_RANGE, BLOCKED, MOVE, REJECTED, MOVED_STILL_TACTICAL, ESCAPED }
-    public enum Kind { ATTACK, MOVE, BREAKOUT, TURN, BRACE, HOLD_BRACE, LOWER_SPEAR }
+    public enum Kind { ATTACK, MOVE, BREAKOUT, TURN, BRACE, LOWER_SPEAR }
     public enum RejectionReason { NOT_TACTICAL, HUNTER_DEFEATED, INVALID_TARGET, INVALID_DISTANCE,
         BLOCKED_START, BLOCKED_CENTER, BLOCKED_PATH, OCCUPIED_PATH }
     public enum Effect { BITE, HIT }
@@ -18,7 +18,9 @@ public final class TacticalAttackResult {
         HIT, ATTACK_MISS, BITE, BITE_MISS, PREPARATION_STARTED, RECOVERY_STARTED, RECOVERY_ENDED,
         BREAKOUT_MOVED, BREAKOUT_INTERRUPTED, TACTICAL_EXITED, TURN_COMPLETED, BRACE_READY, SPEAR_LOWERED,
         LEAP_LAUNCHED, LEAP_CANCELLED, LEAP_CONTACT, LEAP_MISSED, LEAP_BLOCKED, ACTION_INTERRUPTED,
-        BREAKOUT_BLOCKED, HUNTER_RECOVERY_STARTED, HUNTER_RECOVERY_ENDED, WOLF_RECOVERY_STARTED, WOLF_RECOVERY_ENDED
+        BREAKOUT_BLOCKED, HUNTER_RECOVERY_STARTED, HUNTER_RECOVERY_ENDED, WOLF_RECOVERY_STARTED, WOLF_RECOVERY_ENDED,
+        WOLF_STEP_STARTED, WOLF_FLANK_STARTED, WOLF_MOVED, WOLF_STEP_BLOCKED, WOLF_NO_ROUTE,
+        LEAP_PREPARATION_STARTED, STANCE_RELEASED
     }
     public static final class Event {
         private final EventType type;
@@ -43,30 +45,57 @@ public final class TacticalAttackResult {
     private final List<Effect> effects;
     private final ClashFacts clash;
 
+    /** An encounter fact uses quanta relative to the command and may describe its starting mark. */
+    @lombok.Value
+    public static class ClashFact {
+        EventType type;
+        long offset;
+        SpearClashState state;
+        long motionStart;
+        List<WorldPosition> route;
+        SpearClashState.Result contact;
+        long hunterRecovery;
+        long wolfRecovery;
+
+        public ClashFact(EventType type, long offset, SpearClashState state, long motionStart,
+                         List<WorldPosition> route, SpearClashState.Result contact,
+                         long hunterRecovery, long wolfRecovery) {
+            this.type = type;
+            this.offset = offset;
+            this.state = state;
+            this.motionStart = motionStart;
+            this.route = Collections.unmodifiableList(new ArrayList<>(route));
+            this.contact = contact;
+            this.hunterRecovery = hunterRecovery;
+            this.wolfRecovery = wolfRecovery;
+        }
+    }
+
     @lombok.Value
     public static class ClashFacts {
         SpearClashState before;
         SpearClashState after;
-        SpearClashState.Result contact;
         WorldPosition wolfBefore;
         WorldPosition wolfAfter;
-        List<WorldPosition> route;
-        long contactOffset;
-        long hunterRecovery;
-        long wolfRecovery;
+        List<ClashFact> timeline;
+        SpearClashState.StopReason stopReason;
 
-        public ClashFacts(SpearClashState before, SpearClashState after, SpearClashState.Result contact,
-                          WorldPosition wolfBefore, WorldPosition wolfAfter, List<WorldPosition> route,
-                          long contactOffset, long hunterRecovery, long wolfRecovery) {
+        public ClashFacts(SpearClashState before, SpearClashState after, WorldPosition wolfBefore,
+                          WorldPosition wolfAfter, List<ClashFact> timeline, SpearClashState.StopReason stopReason) {
             this.before = before;
             this.after = after;
-            this.contact = contact;
             this.wolfBefore = wolfBefore;
             this.wolfAfter = wolfAfter;
-            this.route = Collections.unmodifiableList(new ArrayList<>(route));
-            this.contactOffset = contactOffset;
-            this.hunterRecovery = hunterRecovery;
-            this.wolfRecovery = wolfRecovery;
+            this.timeline = Collections.unmodifiableList(new ArrayList<>(timeline));
+            this.stopReason = stopReason;
+        }
+
+        public ClashFact getLastContact() {
+            for (int i = timeline.size() - 1; i >= 0; i--) {
+                ClashFact fact = timeline.get(i);
+                if (fact.contact != null) return fact;
+            }
+            return null;
         }
     }
 

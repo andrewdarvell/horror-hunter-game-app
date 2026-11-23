@@ -12,12 +12,14 @@ public final class SpearClashConfig {
     public static final int MIN_REACH_CELLS = 1;
     public static final int MAX_REACH_CELLS = 2;
     public static final int HALF_ANGLE_DEGREES = 45;
+    public static final long GUARD_LIMIT_QUANTA = 8;
 
     private final Facing facing;
     private final long seed;
     private final long braceQuanta;
     private final long preparationQuanta;
     private final long flightQuanta;
+    private final long wolfStepQuanta;
     private final OutcomeTable weights;
 
     public SpearClashConfig(Facing facing, long seed) {
@@ -26,12 +28,19 @@ public final class SpearClashConfig {
 
     public SpearClashConfig(Facing facing, long seed, long braceQuanta, long preparationQuanta,
                             long flightQuanta, double repelWeight, double passWeight, double closeWeight) {
+        this(facing, seed, braceQuanta, preparationQuanta, flightQuanta, 2, repelWeight, passWeight, closeWeight);
+    }
+
+    public SpearClashConfig(Facing facing, long seed, long braceQuanta, long preparationQuanta,
+                            long flightQuanta, long wolfStepQuanta, double repelWeight,
+                            double passWeight, double closeWeight) {
         if (facing == null) throw new IllegalArgumentException("Facing is required");
         this.facing = facing;
         this.seed = seed;
         this.braceQuanta = wholeTicks(braceQuanta);
         this.preparationQuanta = wholeTicks(preparationQuanta);
         this.flightQuanta = wholeTicks(flightQuanta);
+        this.wolfStepQuanta = wholeTicks(wolfStepQuanta);
         weights = OutcomeTable.of(Arrays.asList(new WeightedOutcome(REPELLED.name(), repelWeight),
             new WeightedOutcome(GRAZED_PAST.name(), passWeight),
             new WeightedOutcome(BROKE_THROUGH.name(), closeWeight)));

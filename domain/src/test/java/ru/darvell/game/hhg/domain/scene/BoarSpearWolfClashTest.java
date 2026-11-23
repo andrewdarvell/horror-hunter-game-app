@@ -11,11 +11,14 @@ import ru.darvell.game.hhg.domain.actor.HunterState;
 import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
 import ru.darvell.game.hhg.domain.tactical.Facing;
 import ru.darvell.game.hhg.domain.tactical.SpearClashConfig;
-import ru.darvell.game.hhg.domain.tactical.SpearClashState;
 import ru.darvell.game.hhg.domain.tactical.SpearClashState.Result;
+import ru.darvell.game.hhg.domain.tactical.SpearClashState.StopReason;
 import ru.darvell.game.hhg.domain.tactical.SpearClashState.WolfPhase;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult;
+import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.ClashFact;
+import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.EventType;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.Kind;
+import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.Outcome;
 import ru.darvell.game.hhg.domain.tactical.TacticalEntryResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalExitResult;
 import ru.darvell.game.hhg.domain.tactical.TacticalGrid;
@@ -32,397 +35,456 @@ class BoarSpearWolfClashTest {
     private static final CreatureBehaviorConfig BEHAVIOR = new CreatureBehaviorConfig(1, 1, 1, 1, 1, 2, 1.2, 10);
     private WorldSceneState scene;
 
-    private void start(long seed, StaticAabb... obstacles) {
-        start(new SpearClashConfig(Facing.E, seed), 3, 0, 4, 2, 0, null, obstacles);
+    private void begin(long seed, int wx, int wy, StaticAabb... obstacles) {
+        begin(new SpearClashConfig(Facing.E, seed), at(0, 0), at(wx, wy), 4, 2,
+            0, null, WolfTurn.ready(false, false), obstacles);
     }
 
-    private void start(SpearClashConfig config, int wx, int wy, int hunterHp, int wolfHp, long now,
-                       LongToDoubleFunction sample, StaticAabb... obstacles) {
+    private void begin(SpearClashConfig config, WorldPosition hunter, WorldPosition wolf, int hunterHp, int wolfHp,
+                       long now, LongToDoubleFunction random, WolfTurn turn, StaticAabb... obstacles) {
         WorldGeometry geometry = new WorldGeometry(Arrays.asList(obstacles));
-        HunterState hunter = new HunterState(point(0, 0), 1, .4).withDamage(4 - hunterHp);
-        CreaturePatrolState wolf = new CreaturePatrolState(Arrays.asList(point(wx, wy), point(wx + 1, wy)),
-            BEHAVIOR, .4, geometry).withDamage(2 - wolfHp);
-        scene = sample == null && now == 0 ? new WorldSceneState(hunter, wolf, GRID, geometry, config)
-            : new WorldSceneState(hunter, wolf, GRID, geometry, config, now, sample);
+        scene = new WorldSceneState(new HunterState(hunter, 1, .4).withDamage(4 - hunterHp),
+            new CreaturePatrolState(Arrays.asList(wolf, wolf.translate(1, 0)), BEHAVIOR, .4, geometry)
+                .withDamage(2 - wolfHp), GRID, geometry, config, now, random, turn);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.enterTactical());
     }
 
-    private static WorldPosition point(int x, int y) { return new WorldPosition(x, y); }
+    private static WorldPosition at(int x, int y) { return new WorldPosition(x, y); }
+    private static CellCoordinates cell(int x, int y) { return new CellCoordinates(x, y); }
 
-    private void step(int x, int y) {
-        assertEquals(TacticalMoveResult.SUCCESS, scene.tryMoveHunterTo(new CellCoordinates(x, y)));
+    private WolfTurn flight(int wx, int wy) {
+        SpearClash.Plan plan = new SpearClash(GRID, WorldGeometry.empty()).plan(at(0, 0), at(wx, wy));
+        return WolfTurn.preparing(plan, 2, 4, false);
     }
 
-    private TacticalAttackResult action(Kind kind) {
-        TacticalAttackResult result = scene.trySpearAction(kind, null);
+    private TacticalAttackResult brace() {
+        TacticalAttackResult result = scene.trySpearAction(Kind.BRACE, null);
         assertTrue(result.isAccepted());
         assertSame(result, scene.getLastResolution());
         return result;
     }
 
-    private TacticalAttackResult collide() {
-        action(Kind.BRACE);
-        return action(Kind.HOLD_BRACE);
+    private TacticalAttackResult move(int x, int y) {
+        assertEquals(TacticalMoveResult.SUCCESS, scene.tryMoveHunterTo(cell(x, y)));
+        return scene.getLastResolution();
     }
 
-    private void state(long now, int h, int w, int x, int y, WolfPhase phase, long remaining, long cursor) {
-        assertEquals(now, scene.getTacticalTimeQuanta());
+    private static List<ClashFact> facts(TacticalAttackResult result, EventType type) {
+        return result.getClash().getTimeline().stream().filter(f -> f.getType() == type).collect(Collectors.toList());
+    }
+
+    private static List<Long> times(TacticalAttackResult result, EventType type) {
+        return facts(result, type).stream().map(ClashFact::getOffset).collect(Collectors.toList());
+    }
+
+    private static void contact(TacticalAttackResult result, Result contact, long offset, long hunter, long wolf) {
+        ClashFact fact = result.getClash().getLastContact();
+        assertNotNull(fact);
+        assertEquals(contact, fact.getContact());
+        assertEquals(offset, fact.getOffset());
+        assertEquals(hunter, fact.getHunterRecovery());
+        assertEquals(wolf, fact.getWolfRecovery());
+        assertTrue(result.getEvents().stream().noneMatch(event -> event.getType() == BITE || event.getType() == BITE_MISS));
+    }
+
+    private void state(long tick, int h, int w, int x, int y, WolfPhase phase, long remaining, long cursor) {
+        assertEquals(tick, scene.getTacticalTimeQuanta());
         assertEquals(h, scene.getHunterHealth());
         assertEquals(w, scene.getCreatureHealth());
-        assertEquals(point(x, y), scene.getCreaturePosition());
+        assertEquals(at(x, y), scene.getCreaturePosition());
         assertEquals(phase, scene.getSpearClashState().getWolfPhase());
         assertEquals(remaining, scene.getSpearClashState().getWolfRemaining());
         assertEquals(cursor, scene.getSpearClashState().getRandomCursor());
         assertNull(scene.getBiteState());
-    }
-
-    private void contact(TacticalAttackResult result, Result contact, long hunterRecovery, long wolfRecovery) {
-        assertEquals(contact, result.getClash().getContact());
-        assertEquals(hunterRecovery, result.getClash().getHunterRecovery());
-        assertEquals(wolfRecovery, result.getClash().getWolfRecovery());
-        if (contact != Result.MISS && contact != Result.BLOCKED) {
-            assertFalse(scene.getSpearClashState().isBraced());
-        }
-        assertEquals(Facing.E, scene.getSpearClashState().getFacing());
-        assertTrue(result.getEffects().stream().noneMatch(effect -> effect == TacticalAttackResult.Effect.BITE));
+        if (scene.getPlacement() != null && w > 0) assertEquals(cell(x, y), scene.getPlacement().getCreatureCell());
     }
 
     @Test
-    void s01TurnsPayForShortestArcAndOnlyAcceptedCommandsDropStance() {
-        for (Facing facing : Arrays.asList(Facing.E, Facing.NE, Facing.N, Facing.W)) {
-            start(new SpearClashConfig(Facing.E, 3), 1, 0, 4, 2, 0, null);
-            action(Kind.BRACE);
-            TacticalAttackResult previous = scene.getLastResolution();
-            TacticalAttackResult turn = scene.trySpearAction(Kind.TURN, facing);
-            assertEquals(2 + 2 * Facing.E.stepsTo(facing), scene.getTacticalTimeQuanta());
-            assertEquals(facing, scene.getSpearClashState().getFacing());
-            assertEquals(facing != Facing.E, turn.isAccepted());
-            assertEquals(facing == Facing.E, scene.getSpearClashState().isBraced());
-            if (facing == Facing.E) assertSame(previous, scene.getLastResolution());
-        }
-        start(new SpearClashConfig(Facing.E, 3), 1, 0, 4, 2, 0, null);
-        action(Kind.BRACE);
-        assertEquals(TacticalMoveResult.OCCUPIED, scene.tryMoveHunterTo(new CellCoordinates(1, 0)));
-        assertFalse(scene.trySpearAction(Kind.BRACE, null).isAccepted());
-        assertFalse(scene.trySpearAction(Kind.HOLD_BRACE, null).isAccepted());
-        assertTrue(scene.getSpearClashState().isBraced());
-        assertEquals(1, action(Kind.LOWER_SPEAR).getDuration());
-        assertFalse(scene.getSpearClashState().isBraced());
-        action(Kind.BRACE);
-        assertTrue(scene.tryAttackCreature(new CellCoordinates(1, 0)).isAccepted());
-        assertFalse(scene.getSpearClashState().isBraced());
-        action(Kind.BRACE);
-        step(0, 1);
-        assertFalse(scene.getSpearClashState().isBraced());
-        action(Kind.BRACE);
-        assertTrue(scene.tryBreakoutTo(new CellCoordinates(0, 3)).isAccepted());
-        assertFalse(scene.getSpearClashState().isBraced());
-        assertEquals(Facing.E, scene.getSpearClashState().getFacing());
-    }
-
-    @Test
-    void s02PublishedStancePausesAndOneConfirmedActionCoversContactAndRecovery() {
-        start(3);
-        assertEquals(WolfPhase.PREPARING, scene.getSpearClashState().getWolfPhase());
-        assertEquals(2, scene.getSpearClashState().getWolfRemaining());
-        TacticalAttackResult braced = action(Kind.BRACE);
-        assertEquals(Arrays.asList(BRACE_READY, LEAP_LAUNCHED), types(braced));
-        for (int frame = 0; frame < 20; frame++) {
-            scene.update(0, 0, .25, false);
-            scene.previewSpearAction(Kind.HOLD_BRACE, null);
-        }
-        state(2, 4, 2, 3, 0, WolfPhase.IN_FLIGHT, 2, 0);
-        assertTrue(scene.getSpearClashState().isBraced());
-        assertSame(braced, scene.getLastResolution());
-        TacticalAttackResult hold = action(Kind.HOLD_BRACE);
-        assertEquals(1, hold.getPlannedDuration());
-        assertEquals(2, hold.getDuration());
-        assertEquals(Arrays.asList(LEAP_CONTACT, HUNTER_RECOVERY_STARTED, WOLF_RECOVERY_STARTED,
-            HUNTER_RECOVERY_ENDED), types(hold));
-        assertEquals(Arrays.asList(1, 1, 1, 2), times(hold));
-    }
-
-    @Test
-    void s03ReboundLeavesRecoveryForWolfAfterHuntersDecision() {
-        start(3);
-        contact(collide(), Result.REPELLED, 2, 6);
+    void r01OneBraceRunsAllThreeContactsAndRecoveries() {
+        begin(3, 3, 0);
+        TacticalAttackResult repel = brace();
+        assertEquals(Arrays.asList(2L), times(repel, BRACE_READY));
+        assertEquals(Arrays.asList(2L), times(repel, LEAP_LAUNCHED));
+        contact(repel, Result.REPELLED, 4, 2, 6);
         state(6, 4, 1, 3, 0, WolfPhase.RECOVERING, 4, 1);
-        assertEquals(point(0, 0), scene.getHunterPosition());
-        step(0, 1);
-        state(8, 4, 1, 3, 0, WolfPhase.RECOVERING, 2, 1);
-        step(0, 2);
-        state(10, 4, 1, 3, 0, WolfPhase.SPENT, 0, 1);
-        assertEquals(Arrays.asList(WOLF_RECOVERY_ENDED), types(scene.getLastResolution()));
+        begin(1, 3, 0);
+        TacticalAttackResult pass = brace();
+        contact(pass, Result.GRAZED_PAST, 4, 4, 4);
+        assertEquals(Arrays.asList(at(3, 0), at(2, 0), at(1, 0), at(1, 1), at(0, 1), at(-1, 1)),
+            pass.getClash().getLastContact().getRoute());
+        state(8, 4, 1, -1, 1, WolfPhase.PREPARING, 2, 1);
+        begin(0, 3, 0);
+        contact(brace(), Result.BROKE_THROUGH, 4, 6, 2);
+        state(10, 4, 2, 1, 0, WolfPhase.PREPARING, 2, 1);
+        assertEquals(at(0, 0), scene.getHunterPosition());
+        assertEquals(Facing.E, scene.getSpearClashState().getFacing());
+        assertFalse(scene.getSpearClashState().isBraced());
     }
 
     @Test
-    void s04PassTakesAFreeSideAndPreservesFacing() {
-        start(1);
-        TacticalAttackResult outcome = collide();
-        contact(outcome, Result.GRAZED_PAST, 4, 4);
-        assertEquals(Arrays.asList(point(3, 0), point(2, 0), point(1, 0), point(1, 1), point(0, 1), point(-1, 1)),
-            outcome.getClash().getRoute());
-        state(8, 4, 1, -1, 1, WolfPhase.SPENT, 0, 1);
-        assertEquals(point(0, 0), scene.getHunterPosition());
-        start(1, new StaticAabb(-1.5, .5, 1, 1));
-        contact(collide(), Result.GRAZED_PAST, 4, 4);
-        state(8, 4, 1, -1, -1, WolfPhase.SPENT, 0, 1);
+    void r02ApproachMovesOnDeadlinesBeforeTheSameBraceContacts() {
+        begin(3, 5, 0);
+        assertEquals(at(5, 0), scene.getCreaturePosition());
+        assertEquals(cell(5, 0), scene.getPlacement().getCreatureCell());
+        TacticalAttackResult result = brace();
+        List<ClashFact> moves = facts(result, WOLF_MOVED);
+        assertEquals(Arrays.asList(2L, 4L), times(result, WOLF_MOVED));
+        assertEquals(Arrays.asList(at(5, 0), at(4, 0)), moves.get(0).getRoute());
+        assertEquals(Arrays.asList(at(4, 0), at(3, 0)), moves.get(1).getRoute());
+        assertEquals(Arrays.asList(4L), times(result, LEAP_PREPARATION_STARTED));
+        assertEquals(Arrays.asList(6L), times(result, LEAP_LAUNCHED));
+        contact(result, Result.REPELLED, 8, 2, 6);
+        state(10, 4, 1, 3, 0, WolfPhase.RECOVERING, 4, 1);
     }
 
     @Test
-    void s05BreakThroughAndLaterOrdinaryStrikesNeverArmBite() {
-        start(0);
-        TacticalAttackResult clash = collide();
-        contact(clash, Result.BROKE_THROUGH, 6, 2);
-        assertEquals(Arrays.asList(1, 1, 1, 2, 4), times(clash));
-        state(10, 4, 2, 1, 0, WolfPhase.SPENT, 0, 1);
-        step(0, 1);
-        assertTrue(types(scene.getLastResolution()).isEmpty());
-        for (int strike = 0; strike < 2; strike++) {
-            TacticalAttackResult attack = scene.tryAttackCreature(new CellCoordinates(1, 0));
-            assertEquals(4, attack.getHunterAfter());
-            assertEquals(strike == 0 ? Arrays.asList(HIT) : Arrays.asList(HIT, TACTICAL_EXITED), types(attack));
-        }
-        state(20, 4, 0, 1, 0, WolfPhase.SPENT, 0, 1);
+    void r03FlankExposesOneResponseWhileStanceAndTelegraphStayFrozen() {
+        begin(new SpearClashConfig(Facing.E, 3), at(0, 0), at(1, 1), 4, 2, 0, null,
+            WolfTurn.recovering(2, false));
+        TacticalAttackResult result = brace();
+        assertEquals(StopReason.SIDE_THREAT, result.getClash().getStopReason());
+        assertEquals(Arrays.asList(2L), times(result, WOLF_FLANK_STARTED));
+        assertEquals(Arrays.asList(4L), times(result, WOLF_MOVED));
+        state(4, 4, 2, 0, 2, WolfPhase.PREPARING, 2, 0);
+        assertTrue(scene.getSpearClashState().isBraced());
+        assertTrue(scene.getSpearClashState().isFlankUsed());
+        scene.update(0, 0, 20, false);
+        assertFalse(scene.previewSpearAction(Kind.BRACE, null).isAccepted());
+        assertSame(result, scene.getLastResolution());
+        move(-1, 0);
+        TacticalAttackResult missed = move(-2, 0);
+        contact(missed, Result.MISS, 2, 0, 4);
+        state(8, 4, 2, 0, 1, WolfPhase.RECOVERING, 4, 0);
     }
 
     @Test
-    void s06WallFiltersBeforeResolverIncludingZeroAndOnePositiveCandidates() {
-        StaticAabb wall = new StaticAabb(-1.5, -1.5, 1, 3);
-        start(1, wall);
-        contact(collide(), Result.REPELLED, 2, 6);
-        state(6, 4, 1, 3, 0, WolfPhase.RECOVERING, 4, 1);
-        for (int weight : new int[] {0, 20}) {
-            SpearClashConfig config = new SpearClashConfig(Facing.E, 1, 2, 2, 2, 0, 30, weight);
-            start(config, 3, 0, 4, 2, 0, cursor -> { throw new AssertionError("No draw expected"); }, wall);
-            TacticalAttackResult outcome = collide();
-            if (weight == 0) {
-                contact(outcome, Result.STOPPED, 2, 4);
-                state(6, 4, 2, 2, 0, WolfPhase.RECOVERING, 2, 0);
+    void r04BlockedRouteProducesOneFactAndNoSyntheticDeadline() {
+        begin(3, 4, 0, new StaticAabb(2.35, -3, 1.2, 6));
+        TacticalAttackResult result = brace();
+        assertEquals(StopReason.NO_ROUTE, result.getClash().getStopReason());
+        assertEquals(Arrays.asList(0L), times(result, WOLF_NO_ROUTE));
+        state(2, 4, 2, 4, 0, WolfPhase.READY, 0, 0);
+        assertTrue(scene.getSpearClashState().isBraced());
+        scene.update(0, 0, 200, false);
+        assertSame(result, scene.getLastResolution());
+        TacticalAttackResult lower = scene.trySpearAction(Kind.LOWER_SPEAR, null);
+        assertTrue(times(lower, WOLF_NO_ROUTE).isEmpty());
+    }
+
+    @Test
+    void r05GuardProcessesTheWholeLimitPacketAndNeverInsertsADeadline() {
+        for (int step : new int[]{2, 4}) {
+            SpearClashConfig config = new SpearClashConfig(Facing.E, 3, 2, 2, 2, step, 50, 30, 20);
+            begin(config, at(0, 0), at(12, 0), 4, 2, 0, null, WolfTurn.recovering(step, false));
+            TacticalAttackResult result = brace();
+            assertEquals(StopReason.GUARD_LIMIT, result.getClash().getStopReason());
+            assertTrue(scene.getSpearClashState().isBraced());
+            if (step == 2) {
+                assertEquals(Arrays.asList(4L, 6L, 8L, 10L), times(result, WOLF_MOVED));
+                assertEquals(Arrays.asList(at(9, 0), at(8, 0)), facts(result, WOLF_MOVED).get(3).getRoute());
+                state(10, 4, 2, 8, 0, WolfPhase.STEPPING, 2, 0);
+                assertEquals(at(7, 0), scene.getSpearClashState().getStepTarget());
+                assertEquals(Arrays.asList(2L, 4L, 6L, 8L, 10L), times(result, WOLF_STEP_STARTED));
             } else {
-                contact(outcome, Result.BROKE_THROUGH, 6, 2);
-                state(10, 4, 2, 1, 0, WolfPhase.SPENT, 0, 0);
+                assertEquals(Arrays.asList(8L), times(result, WOLF_MOVED));
+                state(8, 4, 2, 11, 0, WolfPhase.STEPPING, 4, 0);
             }
+            scene.update(0, 0, 100, false);
+            assertSame(result, scene.getLastResolution());
         }
     }
 
     @Test
-    void s07SweptPathAndOccupiedCenterBlockLeap() {
-        start(3, new StaticAabb(2.45, -.5, .1, 1));
-        contact(collide(), Result.BLOCKED, 0, 4);
-        state(4, 4, 2, 3, 0, WolfPhase.RECOVERING, 4, 0);
-        start(3);
-        step(1, 0);
-        step(2, 0);
-        contact(scene.getLastResolution(), Result.BLOCKED, 0, 4);
-        state(4, 4, 2, 3, 0, WolfPhase.RECOVERING, 4, 0);
-        assertEquals(point(2, 0), scene.getHunterPosition());
-    }
-
-    @Test
-    void s08SideLeapHitsOnceAndCanBeLethal() {
-        for (int hp : new int[] {4, 1}) {
-            start(new SpearClashConfig(Facing.E, 3), 0, 3, hp, 2, 0, null);
-            contact(collide(), Result.HIT, 2, 4);
-            assertEquals(point(0, 0), scene.getHunterPosition());
-            if (hp == 4) state(6, 3, 2, 0, 1, WolfPhase.RECOVERING, 2, 0);
-            else {
-                state(4, 0, 2, 0, 1, WolfPhase.SPENT, 0, 0);
-                assertFalse(scene.trySpearAction(Kind.BRACE, null).isAccepted());
-            }
-        }
-    }
-
-    @Test
-    void s09DiagonalBoundaryUsesEuclideanRangeAndClosedLos() {
-        for (int y : new int[] {2, -2}) {
-            start(new SpearClashConfig(Facing.E, 3), 2, y, 4, 2, 0, null);
-            contact(collide(), Result.REPELLED, 2, 6);
-            state(6, 4, 1, 2, y, WolfPhase.RECOVERING, 4, 1);
-        }
-        start(new SpearClashConfig(Facing.E, 3), 3, 2, 4, 2, 0, null);
-        assertEquals(WolfPhase.SPENT, scene.getSpearClashState().getWolfPhase());
-        start(new SpearClashConfig(Facing.E, 3), 2, 2, 4, 2, 0, null,
-            new StaticAabb(.25, .5, .25, .25));
-        contact(collide(), Result.MISS, 0, 4);
-        state(4, 4, 2, 1, 1, WolfPhase.RECOVERING, 4, 0);
+    void r06MissResolvesAgainstTheLockedTargetAndKeepsGuard() {
+        begin(new SpearClashConfig(Facing.E, 3), at(0, 2), at(3, 0), 4, 2, 0, null, flight(3, 0));
+        TacticalAttackResult result = brace();
+        contact(result, Result.MISS, 4, 0, 4);
+        state(4, 4, 2, 1, 0, WolfPhase.RECOVERING, 4, 0);
+        assertEquals(StopReason.LEAP_RESOLVED, result.getClash().getStopReason());
         assertTrue(scene.getSpearClashState().isBraced());
     }
 
     @Test
-    void s10LeapDoesNotRetargetMovingHunter() {
-        start(3);
-        step(0, 1);
-        step(0, 2);
-        contact(scene.getLastResolution(), Result.MISS, 0, 4);
-        state(4, 4, 2, 1, 0, WolfPhase.RECOVERING, 4, 0);
-        assertEquals(point(0, 2), scene.getHunterPosition());
+    void r07AnInvalidMandatoryDeadlineCannotPublishAPartialTransition() {
+        begin(new SpearClashConfig(Facing.E, 3), at(0, 0), at(3, 0), 4, 2, 0, null,
+            WolfTurn.recovering(-2, false));
+        assertThrows(IllegalStateException.class, () -> scene.trySpearAction(Kind.BRACE, null));
+        assertNull(scene.getLastResolution());
+        assertEquals(0, scene.getTacticalTimeQuanta());
+        assertEquals(at(3, 0), scene.getCreaturePosition());
     }
 
     @Test
-    void s11HitInterruptsPreparationOrTurnBeforeCompletion() {
-        for (Kind kind : Arrays.asList(Kind.BRACE, Kind.TURN)) {
-            start(new SpearClashConfig(Facing.E, 3, 6, 2, 2, 50, 30, 20), 3, 0, 4, 2, 0, null);
-            TacticalAttackResult outcome = scene.trySpearAction(kind, Facing.W);
-            assertEquals(TacticalAttackResult.Outcome.INTERRUPTED, outcome.getOutcome());
-            contact(outcome, Result.HIT, 2, 4);
-            assertEquals(Arrays.asList(LEAP_LAUNCHED, LEAP_CONTACT, ACTION_INTERRUPTED, HUNTER_RECOVERY_STARTED,
-                WOLF_RECOVERY_STARTED, HUNTER_RECOVERY_ENDED), types(outcome));
+    void r08WolfWaitsForAHunterDecisionBeforeItPreparesItsNextLunge() {
+        begin(0, 3, 0);
+        TacticalAttackResult result = brace();
+        assertEquals(Arrays.asList(6L), times(result, WOLF_RECOVERY_ENDED));
+        assertEquals(Arrays.asList(10L), times(result, HUNTER_RECOVERY_ENDED));
+        assertEquals(Arrays.asList(10L), times(result, LEAP_PREPARATION_STARTED));
+        state(10, 4, 2, 1, 0, WolfPhase.PREPARING, 2, 1);
+        TacticalAttackResult attack = scene.tryAttackCreature(cell(1, 0));
+        assertEquals(Arrays.asList(2L), times(attack, LEAP_LAUNCHED));
+        assertTrue(attack.getClash().getTimeline().indexOf(facts(attack, HIT).get(0))
+            < attack.getClash().getTimeline().indexOf(facts(attack, LEAP_CONTACT).get(0)));
+        contact(attack, Result.HIT, 4, 2, 4);
+        state(16, 3, 1, 1, 0, WolfPhase.RECOVERING, 2, 1);
+    }
+
+    @Test
+    void r09OneHitInterruptsAnIncompleteTurnOrPreparation() {
+        for (Kind kind : Arrays.asList(Kind.TURN, Kind.BRACE)) {
+            begin(new SpearClashConfig(Facing.E, 3, 6, 2, 2, 50, 30, 20),
+                at(0, 0), at(3, 0), 4, 2, 0, null, flight(3, 0));
+            TacticalAttackResult result = scene.trySpearAction(kind, Facing.W);
+            assertEquals(Outcome.INTERRUPTED, result.getOutcome());
+            contact(result, Result.HIT, 4, 2, 4);
+            assertEquals(Arrays.asList(4L), times(result, ACTION_INTERRUPTED));
+            assertTrue(times(result, TURN_COMPLETED).isEmpty());
+            assertTrue(times(result, BRACE_READY).isEmpty());
+            assertEquals(Facing.E, scene.getSpearClashState().getFacing());
+            assertFalse(scene.getSpearClashState().isBraced());
             state(6, 3, 2, 1, 0, WolfPhase.RECOVERING, 2, 0);
-            step(0, 1);
-            assertEquals(Arrays.asList(WOLF_RECOVERY_ENDED), types(scene.getLastResolution()));
         }
     }
 
     @Test
-    void s12ReadOnlyPreviewMatchesApplyAndAStaleCommandRevalidates() {
-        start(1);
-        TacticalAttackResult brace = action(Kind.BRACE);
-        TacticalAttackResult first = scene.previewSpearAction(Kind.HOLD_BRACE, null);
-        for (int read = 0; read < 5; read++) {
-            TacticalAttackResult next = scene.previewSpearAction(Kind.HOLD_BRACE, null);
-            assertEquals(first.getClash(), next.getClash());
-            assertEquals(types(first), types(next));
-            assertEquals(times(first), times(next));
-            assertSame(brace, scene.getLastResolution());
-            state(2, 4, 2, 3, 0, WolfPhase.IN_FLIGHT, 2, 0);
-        }
-        TacticalAttackResult applied = action(Kind.HOLD_BRACE);
-        assertEquals(first.getClash(), applied.getClash());
-        assertEquals(first.getHunterAfter(), applied.getHunterAfter());
-        assertEquals(first.getCreatureAfter(), applied.getCreatureAfter());
-        assertEquals(types(first), types(applied));
-        assertEquals(times(first), times(applied));
-        assertEquals(1, first.getClash().getAfter().getRandomCursor());
-        start(1);
-        assertEquals(first.getClash(), collide().getClash());
-        start(1);
-        action(Kind.BRACE);
-        assertEquals(Result.GRAZED_PAST, scene.previewSpearAction(Kind.HOLD_BRACE, null).getClash().getContact());
-        step(0, 1);
-        assertFalse(scene.trySpearAction(Kind.HOLD_BRACE, null).isAccepted());
-        state(4, 4, 2, 1, 0, WolfPhase.RECOVERING, 4, 0);
-        assertEquals(.7457817572627011, SpearClash.sample(1, 1));
+    void r10LateStepBlockKeepsOriginAndDoesNotRetryOnTheSameMark() {
+        begin(new SpearClashConfig(Facing.E, 3), at(1, 0), at(3, 0), 4, 2, 0, null,
+            WolfTurn.stepping(new WolfTurn.Step(at(3, 0), at(2, 0), 0, true), 2, false));
+        TacticalAttackResult blocked = move(2, 0);
+        assertEquals(Arrays.asList(2L), times(blocked, WOLF_STEP_BLOCKED));
+        assertEquals(at(2, 0), scene.getHunterPosition());
+        assertTrue(scene.getSpearClashState().isFlankUsed());
+        state(2, 4, 2, 3, 0, WolfPhase.READY, 0, 0);
+        assertEquals(Arrays.asList(0L), times(move(1, 0), LEAP_PREPARATION_STARTED));
     }
 
     @Test
-    void s13BadSamplesAndOverflowDoNotPublishPartialResults() {
-        SpearClashConfig config = new SpearClashConfig(Facing.E, 3);
-        int[] samples = {0};
-        start(config, 3, 0, 4, 2, 0, cursor -> { samples[0]++; return Double.NaN; });
-        TacticalAttackResult brace = action(Kind.BRACE);
-        assertThrows(IllegalArgumentException.class, () -> scene.previewSpearAction(Kind.HOLD_BRACE, null));
-        assertSame(brace, scene.getLastResolution());
-        assertThrows(IllegalArgumentException.class, () -> scene.trySpearAction(Kind.HOLD_BRACE, null));
-        assertEquals(2, samples[0]);
-        assertSame(brace, scene.getLastResolution());
-        state(2, 4, 2, 3, 0, WolfPhase.IN_FLIGHT, 2, 0);
-
-        RuntimeException failure = new RuntimeException("Fixture failure");
-        start(config, 3, 0, 4, 2, 0, cursor -> { throw failure; });
-        TacticalAttackResult beforeFailure = action(Kind.BRACE);
-        assertSame(failure, assertThrows(RuntimeException.class, () -> scene.trySpearAction(Kind.HOLD_BRACE, null)));
-        assertSame(beforeFailure, scene.getLastResolution());
-        state(2, 4, 2, 3, 0, WolfPhase.IN_FLIGHT, 2, 0);
-
-        start(config, 3, 0, 4, 2, Long.MAX_VALUE - 7, cursor -> SpearClash.sample(3, cursor));
-        TacticalAttackResult beforeOverflow = action(Kind.BRACE);
-        assertThrows(ArithmeticException.class, () -> scene.previewSpearAction(Kind.HOLD_BRACE, null));
-        assertThrows(ArithmeticException.class, () -> scene.trySpearAction(Kind.HOLD_BRACE, null));
-        assertSame(beforeOverflow, scene.getLastResolution());
-        state(Long.MAX_VALUE - 5, 4, 2, 3, 0, WolfPhase.IN_FLIGHT, 2, 0);
-    }
-
-    @Test
-    void s14SimultaneousStrikeAndBraceAreResolvedBeforeContact() {
-        start(new SpearClashConfig(Facing.E, 3, 2, 4, 2, 50, 30, 20), 2, 0, 4, 1, 0, null);
-        step(1, 0);
-        TacticalAttackResult strike = scene.tryAttackCreature(new CellCoordinates(2, 0));
-        assertEquals(Arrays.asList(LEAP_LAUNCHED, HIT, LEAP_CANCELLED, TACTICAL_EXITED), types(strike));
-        state(6, 4, 0, 2, 0, WolfPhase.SPENT, 0, 0);
+    void r11StrikePrecedesLeapAndWolfStepPrecedesBreakoutTranslation() {
+        SpearClashConfig delayed = new SpearClashConfig(Facing.E, 3, 2, 4, 2, 50, 30, 20);
+        begin(delayed, at(0, 0), at(2, 0), 4, 1, 0, null, WolfTurn.ready(false, false));
+        move(1, 0);
+        TacticalAttackResult strike = scene.tryAttackCreature(cell(2, 0));
+        assertEquals(Arrays.asList(4L), times(strike, LEAP_CANCELLED));
+        assertNull(strike.getClash().getLastContact());
         assertEquals(SceneMode.EXPLORATION, scene.getMode());
-        start(new SpearClashConfig(Facing.E, 3, 4, 2, 2, 50, 30, 20), 3, 0, 4, 2, 0, null);
-        TacticalAttackResult outcome = action(Kind.BRACE);
-        contact(outcome, Result.REPELLED, 2, 6);
-        assertEquals(Arrays.asList(LEAP_LAUNCHED, BRACE_READY, LEAP_CONTACT, HUNTER_RECOVERY_STARTED,
-            WOLF_RECOVERY_STARTED, HUNTER_RECOVERY_ENDED), types(outcome));
+        state(6, 4, 0, 2, 0, WolfPhase.READY, 0, 0);
+
+        begin(new SpearClashConfig(Facing.E, 3), at(0, 0), at(1, 1), 4, 2, 0, null,
+            WolfTurn.stepping(new WolfTurn.Step(at(1, 1), at(1, 0), 0, false), 2, false));
+        TacticalAttackResult breakout = scene.tryBreakoutTo(cell(2, 0));
+        assertEquals(Outcome.INTERRUPTED, breakout.getOutcome());
+        assertEquals(Arrays.asList(2L), times(breakout, WOLF_MOVED));
+        assertEquals(Arrays.asList(2L), times(breakout, BREAKOUT_BLOCKED));
+        assertEquals(at(0, 0), scene.getHunterPosition());
+        assertEquals(at(1, 0), scene.getCreaturePosition());
+    }
+
+    @Test
+    void r12ForecastAndApplyShareBothDrawsAndRejectStaleGeometry() {
+        begin(3, 3, 0);
+        TacticalAttackResult first = scene.previewSpearAction(Kind.BRACE, null);
+        assertEquals(first.getClash(), scene.previewSpearAction(Kind.BRACE, null).getClash());
+        assertNull(scene.getLastResolution());
+        state(0, 4, 2, 3, 0, WolfPhase.PREPARING, 2, 0);
+        assertEquals(first.getClash(), brace().getClash());
+        TacticalAttackResult second = scene.previewSpearAction(Kind.BRACE, null);
+        assertEquals(second.getClash(), scene.previewSpearAction(Kind.BRACE, null).getClash());
         state(6, 4, 1, 3, 0, WolfPhase.RECOVERING, 4, 1);
-    }
-
-    @Test
-    void s15LethalSpearReleasesOccupancyAtLandingCell() {
-        start(new SpearClashConfig(Facing.E, 3), 3, 0, 4, 1, 0, null);
-        contact(collide(), Result.REPELLED, 2, 6);
-        state(4, 4, 0, 3, 0, WolfPhase.SPENT, 0, 1);
+        TacticalAttackResult applied = brace();
+        assertEquals(second.getClash(), applied.getClash());
+        contact(applied, Result.GRAZED_PAST, 8, 4, 4);
         assertEquals(SceneMode.EXPLORATION, scene.getMode());
-        assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.enterTactical());
-        assertFalse(scene.getPlacement().creatureCell().isPresent());
-        step(1, 0);
-        step(2, 0);
-        step(3, 0);
-    }
+        state(14, 4, 0, -1, 1, WolfPhase.READY, 0, 2);
 
-    @Test
-    void s16JumpResolvesBeforeBreakoutMoveAndCanBlockTheRoute() {
-        for (int hp : new int[] {4, 1}) {
-            start(new SpearClashConfig(Facing.E, 3), 3, 0, hp, 2, 0, null);
-            action(Kind.BRACE);
-            TacticalAttackResult result = scene.tryBreakoutTo(new CellCoordinates(0, 2));
-            assertEquals(TacticalAttackResult.Outcome.INTERRUPTED, result.getOutcome());
-            assertEquals(Result.HIT, result.getClash().getContact());
-            assertEquals(point(0, 0), scene.getHunterPosition());
-            assertEquals(hp - 1, scene.getHunterHealth());
-            assertEquals(hp == 1 ? 4 : 6, scene.getTacticalTimeQuanta());
-            assertFalse(types(result).contains(BREAKOUT_MOVED));
-        }
-        start(3);
-        step(1, 1);
-        TacticalAttackResult result = scene.tryBreakoutTo(new CellCoordinates(1, -1));
-        assertEquals(TacticalAttackResult.Outcome.INTERRUPTED, result.getOutcome());
-        assertEquals(point(1, 1), scene.getHunterPosition());
-        assertEquals(Arrays.asList(LEAP_MISSED, WOLF_RECOVERY_STARTED, BREAKOUT_BLOCKED), types(result));
+        begin(1, 3, 0);
+        assertEquals(Result.GRAZED_PAST, scene.previewSpearAction(Kind.BRACE, null).getClash().getLastContact().getContact());
+        move(0, 1);
+        TacticalAttackResult updated = scene.previewSpearAction(Kind.BRACE, null);
+        TacticalAttackResult fresh = brace();
+        assertEquals(updated.getClash(), fresh.getClash());
+        contact(fresh, Result.MISS, 2, 0, 4);
         state(4, 4, 2, 1, 0, WolfPhase.RECOVERING, 4, 0);
     }
 
     @Test
-    void s17ExitPreservesRecoveryButCancelsUnresolvedFlight() {
-        start(3);
-        TacticalAttackResult collision = collide();
+    void r13ExitBlocksLiveThreatAndCarriesRecoveryThroughReentry() {
+        begin(3, 3, 0);
+        assertEquals(TacticalExitResult.ACTIVE_THREAT, scene.tryExitTactical());
+        state(0, 4, 2, 3, 0, WolfPhase.PREPARING, 2, 0);
+        TacticalAttackResult repelled = brace();
         assertEquals(TacticalExitResult.SUCCESS, scene.tryExitTactical());
         scene.update(0, 0, .1, false);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.enterTactical());
+        assertSame(repelled, scene.getLastResolution());
         state(6, 4, 1, 3, 0, WolfPhase.RECOVERING, 4, 1);
-        assertSame(collision, scene.getLastResolution());
-        start(3);
-        action(Kind.BRACE);
+        move(0, 1);
+        assertEquals(WolfPhase.RECOVERING, scene.getSpearClashState().getWolfPhase());
+        move(0, 2);
+        assertEquals(WolfPhase.STEPPING, scene.getSpearClashState().getWolfPhase());
+
+        begin(3, 3, 0);
+        move(0, 1);
         assertEquals(TacticalExitResult.SUCCESS, scene.tryExitTactical());
         assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.enterTactical());
-        state(2, 4, 2, 3, 0, WolfPhase.SPENT, 0, 0);
-        assertFalse(scene.getSpearClashState().isBraced());
+        assertEquals(WolfPhase.STEPPING, scene.getSpearClashState().getWolfPhase());
+        assertNull(scene.getSpearClashState().getJumpTarget());
     }
 
     @Test
-    void s18BreakoutAndBoundsKeepPhysicalTimeline() {
-        start(3);
-        TacticalAttackResult escape = scene.tryBreakoutTo(new CellCoordinates(0, -2));
-        assertEquals(TacticalAttackResult.Outcome.ESCAPED, escape.getOutcome());
-        assertEquals(point(0, -2), scene.getHunterPosition());
-        assertEquals(Arrays.asList(LEAP_LAUNCHED, BREAKOUT_MOVED, LEAP_MISSED, WOLF_RECOVERY_STARTED, TACTICAL_EXITED),
-            types(escape));
-        assertEquals(Arrays.asList(1, 1, 2, 2, 2), times(escape));
+    void r14PaidActionsBreakStanceAndCoincidentReadyIsFirst() {
+        for (Facing facing : Arrays.asList(Facing.E, Facing.NE, Facing.N, Facing.W)) {
+            quietStance();
+            TacticalAttackResult previous = scene.getLastResolution();
+            TacticalAttackResult turned = scene.trySpearAction(Kind.TURN, facing);
+            assertEquals(2 + 2 * Facing.E.stepsTo(facing), scene.getTacticalTimeQuanta());
+            assertEquals(facing, scene.getSpearClashState().getFacing());
+            assertEquals(facing != Facing.E, turned.isAccepted());
+            if (facing == Facing.E) assertSame(previous, scene.getLastResolution());
+            else assertEquals(Arrays.asList(2L * Facing.E.stepsTo(facing)), times(turned, TURN_COMPLETED));
+        }
+        quietStance();
+        assertFalse(scene.trySpearAction(Kind.BRACE, null).isAccepted());
+        assertTrue(scene.getSpearClashState().isBraced());
+        assertEquals(1, scene.trySpearAction(Kind.LOWER_SPEAR, null).getDuration());
+        assertFalse(scene.getSpearClashState().isBraced());
+        quietStance();
+        move(0, 1);
+        assertFalse(scene.getSpearClashState().isBraced());
+        assertEquals(Facing.E, scene.getSpearClashState().getFacing());
+        quietStance();
+        assertTrue(scene.tryBreakoutTo(cell(0, -2)).isAccepted());
+        assertFalse(scene.getSpearClashState().isBraced());
+        assertEquals(Facing.E, scene.getSpearClashState().getFacing());
+
+        begin(new SpearClashConfig(Facing.E, 3), at(0, 0), at(1, 0), 4, 2, 0, null,
+            WolfTurn.recovering(100, false));
+        TacticalAttackResult beforeAttack = brace();
+        assertEquals(TacticalMoveResult.OCCUPIED, scene.tryMoveHunterTo(cell(1, 0)));
+        assertTrue(scene.getSpearClashState().isBraced());
+        assertSame(beforeAttack, scene.getLastResolution());
+        TacticalAttackResult attack = scene.tryAttackCreature(cell(1, 0));
+        assertEquals(Arrays.asList(0L), times(attack, STANCE_RELEASED));
+        assertFalse(scene.getSpearClashState().isBraced());
+
+        begin(new SpearClashConfig(Facing.E, 3, 4, 2, 2, 50, 30, 20), at(0, 0), at(3, 0),
+            4, 2, 0, null, flight(3, 0));
+        TacticalAttackResult coincident = brace();
+        contact(coincident, Result.REPELLED, 4, 2, 6);
+        assertTrue(coincident.getClash().getTimeline().indexOf(facts(coincident, BRACE_READY).get(0))
+            < coincident.getClash().getTimeline().indexOf(facts(coincident, LEAP_CONTACT).get(0)));
+    }
+
+    private void quietStance() {
+        begin(3, 4, 0, new StaticAabb(2.35, -3, 1.2, 6));
+        brace();
+        assertTrue(scene.getSpearClashState().isBraced());
+    }
+
+    @Test
+    void r15InvalidBypassesAreExcludedBeforeSampling() {
+        StaticAabb wall = new StaticAabb(-1.5, -1.5, 1, 3);
+        begin(1, 3, 0, wall);
+        contact(brace(), Result.REPELLED, 4, 2, 6);
+        assertEquals(1, scene.getSpearClashState().getRandomCursor());
+        for (int close : new int[]{20, 0}) {
+            begin(new SpearClashConfig(Facing.E, 1, 2, 2, 2, 0, 30, close),
+                at(0, 0), at(3, 0), 4, 2, 0, cursor -> { throw new AssertionError("Unexpected draw"); },
+                WolfTurn.ready(false, false), wall);
+            TacticalAttackResult result = brace();
+            if (close == 20) contact(result, Result.BROKE_THROUGH, 4, 6, 2);
+            else {
+                contact(result, Result.STOPPED, 4, 2, 4);
+                state(6, 4, 2, 2, 0, WolfPhase.RECOVERING, 2, 0);
+            }
+            assertEquals(0, scene.getSpearClashState().getRandomCursor());
+        }
+        for (StaticAabb north : Arrays.asList(new StaticAabb(-1.5, .5, 1, 1), new StaticAabb(.45, .95, .1, .1))) {
+            begin(1, 3, 0, north);
+            contact(brace(), Result.GRAZED_PAST, 4, 4, 4);
+            assertEquals(at(-1, -1), scene.getCreaturePosition());
+        }
+    }
+
+    @Test
+    void r16LeapChecksSweptPathAndUsesOnlyAnIncomingVisibleSector() {
+        SpearClashConfig config = new SpearClashConfig(Facing.E, 3);
+        begin(config, at(0, 0), at(3, 0), 4, 2, 0, null, flight(3, 0),
+            new StaticAabb(2.45, -.5, .1, 1));
+        contact(brace(), Result.BLOCKED, 4, 0, 4);
+        assertEquals(at(3, 0), scene.getCreaturePosition());
+        begin(3, 3, 0);
+        move(1, 0);
+        contact(move(2, 0), Result.BLOCKED, 2, 0, 4);
+        assertEquals(at(3, 0), scene.getCreaturePosition());
+
+        for (int side : new int[]{2, -2}) {
+            begin(3, 2, side);
+            contact(brace(), Result.REPELLED, 4, 2, 6);
+        }
+        begin(config, at(0, 0), at(2, 2), 4, 2, 0, null, flight(2, 2), new StaticAabb(.25, .5, .25, .25));
+        contact(brace(), Result.MISS, 4, 0, 4);
+        assertEquals(0, scene.getSpearClashState().getRandomCursor());
+        begin(3, 3, 2);
+        assertEquals(WolfPhase.STEPPING, scene.getSpearClashState().getWolfPhase());
+        begin(3, 0, 3);
+        contact(brace(), Result.HIT, 4, 2, 4);
+        state(6, 3, 2, 0, 1, WolfPhase.RECOVERING, 2, 0);
+        begin(config, at(0, 0), at(0, 3), 1, 2, 0, null, WolfTurn.ready(false, false));
+        contact(brace(), Result.HIT, 4, 2, 4);
+        state(4, 0, 2, 0, 1, WolfPhase.READY, 0, 0);
+        assertFalse(scene.trySpearAction(Kind.BRACE, null).isAccepted());
+    }
+
+    @Test
+    void r17FailedRandomAndRecoveryOverflowAreAtomic() {
+        SpearClashConfig config = new SpearClashConfig(Facing.E, 3);
+        int[] calls = {0};
+        begin(config, at(0, 0), at(3, 0), 4, 2, 0, i -> { calls[0]++; return Double.NaN; },
+            WolfTurn.ready(false, false));
+        assertThrows(IllegalArgumentException.class, () -> scene.previewSpearAction(Kind.BRACE, null));
+        assertThrows(IllegalArgumentException.class, () -> scene.trySpearAction(Kind.BRACE, null));
+        assertEquals(2, calls[0]);
+        assertNull(scene.getLastResolution());
+        state(0, 4, 2, 3, 0, WolfPhase.PREPARING, 2, 0);
+
+        RuntimeException failure = new IllegalStateException("Fixture failure");
+        begin(config, at(0, 0), at(3, 0), 4, 2, 0, i -> { throw failure; }, WolfTurn.ready(false, false));
+        assertSame(failure, assertThrows(RuntimeException.class, () -> scene.trySpearAction(Kind.BRACE, null)));
+        state(0, 4, 2, 3, 0, WolfPhase.PREPARING, 2, 0);
+
+        long now = Long.MAX_VALUE - 7;
+        begin(config, at(0, 0), at(3, 0), 4, 2, now, null, WolfTurn.ready(false, false));
+        assertThrows(ArithmeticException.class, () -> scene.previewSpearAction(Kind.BRACE, null));
+        assertThrows(ArithmeticException.class, () -> scene.trySpearAction(Kind.BRACE, null));
+        assertNull(scene.getLastResolution());
+        state(now, 4, 2, 3, 0, WolfPhase.PREPARING, 2, 0);
+    }
+
+    @Test
+    void r18DeathReleasesTheLandingCellAndBreakoutHonorsContactBeforeMovement() {
+        SpearClashConfig config = new SpearClashConfig(Facing.E, 3);
+        begin(config, at(0, 0), at(3, 0), 4, 1, 0, null, WolfTurn.ready(false, false));
+        contact(brace(), Result.REPELLED, 4, 2, 6);
+        assertEquals(SceneMode.EXPLORATION, scene.getMode());
+        state(4, 4, 0, 3, 0, WolfPhase.READY, 0, 1);
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.enterTactical());
+        assertFalse(scene.getPlacement().creatureCell().isPresent());
+        move(1, 0);
+        move(2, 0);
+        move(3, 0);
+
+        begin(config, at(0, 0), at(3, 0), 4, 2, 2, null, flight(3, 0).launch());
+        TacticalAttackResult hit = scene.tryBreakoutTo(cell(0, 2));
+        contact(hit, Result.HIT, 2, 2, 4);
+        assertEquals(Outcome.INTERRUPTED, hit.getOutcome());
+        assertTrue(times(hit, BREAKOUT_MOVED).isEmpty());
+        assertEquals(at(0, 0), scene.getHunterPosition());
+        begin(3, 3, 0);
+        TacticalAttackResult escape = scene.tryBreakoutTo(cell(0, -2));
+        assertEquals(Outcome.ESCAPED, escape.getOutcome());
+        assertEquals(Arrays.asList(2L), times(escape, BREAKOUT_MOVED));
+        contact(escape, Result.MISS, 4, 0, 4);
         state(4, 4, 2, 1, 0, WolfPhase.RECOVERING, 4, 0);
-        start(1, new StaticAabb(-2.5, -2, 2, 4));
-        contact(collide(), Result.REPELLED, 2, 6);
-        start(1, new StaticAabb(.45, .95, .1, .1));
-        contact(collide(), Result.GRAZED_PAST, 4, 4);
-        assertEquals(point(-1, -1), scene.getCreaturePosition());
-    }
-
-    private static List<TacticalAttackResult.EventType> types(TacticalAttackResult result) {
-        return result.getEvents().stream().map(TacticalAttackResult.Event::getType).collect(Collectors.toList());
-    }
-
-    private static List<Integer> times(TacticalAttackResult result) {
-        return result.getEvents().stream().map(TacticalAttackResult.Event::getOffset).collect(Collectors.toList());
     }
 }

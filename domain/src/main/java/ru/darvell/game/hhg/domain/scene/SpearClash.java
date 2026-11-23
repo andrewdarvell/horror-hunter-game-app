@@ -22,7 +22,7 @@ import static ru.darvell.game.hhg.domain.tactical.SpearClashConfig.MAX_REACH_CEL
 import static ru.darvell.game.hhg.domain.tactical.SpearClashConfig.MIN_REACH_CELLS;
 import static ru.darvell.game.hhg.domain.tactical.SpearClashState.Result.*;
 
-/** Geometry and consequences of one scripted leap. The scene owns the clock and the commit. */
+/** Geometry and consequences of a wolf leap. The scene owns the clock and the commit. */
 final class SpearClash {
     @Value
     static class Plan {
@@ -31,6 +31,7 @@ final class SpearClash {
         CellCoordinates targetCell;
         CellCoordinates contact;
         Facing lane;
+        boolean lunge;
     }
 
     @Value
@@ -57,37 +58,102 @@ final class SpearClash {
         long dx = (long) start.getX() - home.getX();
         long dy = (long) start.getY() - home.getY();
         long steps = Math.max(Math.abs(dx), Math.abs(dy));
-        if (steps < 2 || steps > 3 || (dx != 0 && dy != 0 && Math.abs(dx) != Math.abs(dy))
+        if (steps < 1 || steps > 3 || (dx != 0 && dy != 0 && Math.abs(dx) != Math.abs(dy))
             || !hunter.equals(grid.cellToWorldCenter(home)) || !wolf.equals(grid.cellToWorldCenter(start))) {
             return null;
         }
         Facing lane = Facing.along(Long.signum(dx), Long.signum(dy));
+        if (steps == 1) return new Plan(wolf, hunter, home, start, lane, true);
         double laneLength = Math.hypot(lane.getDx(), lane.getDy());
         int contactSteps = Math.min((int) steps - 1, (int) (MAX_REACH_CELLS / laneLength));
         if (contactSteps == 0) return null;
         CellCoordinates contact = shift(home, lane.getDx() * contactSteps, lane.getDy() * contactSteps);
-        return new Plan(wolf, hunter, home, contact, lane);
+        return new Plan(wolf, hunter, home, contact, lane, false);
+    }
+
+    boolean canLaunch(Plan plan, HunterState hunter, CreaturePatrolState wolf, Facing facing, boolean braced) {
+        if (plan == null || !plan.start.equals(wolf.getPosition()) || !plan.target.equals(hunter.getPosition())) return false;
+        List<WorldPosition> approach = route(Collections.singletonList(plan.start), hunter, wolf, plan.contact);
+        if (approach == null || !geometry.hasLineOfSight(plan.target, last(approach))) return false;
+        if (braced && !plan.lunge && covers(facing, plan.lane)) return true;
+        List<WorldPosition> close = route(approach, hunter, wolf, near(plan));
+        return close != null && geometry.hasLineOfSight(plan.target, last(close));
+    }
+
+    WorldPosition stepTarget(HunterState hunter, CreaturePatrolState wolf, Facing facing, boolean flank) {
+        WorldPosition start = wolf.getPosition();
+        WorldPosition target = hunter.getPosition();
+        if (flank && !facesPosition(facing, target, start)) return null;
+        CellCoordinates from = grid.worldToCell(start);
+        WorldPosition chosen = null;
+        double best = distance(start, target);
+        for (Facing direction : Facing.values()) {
+            CellCoordinates cell = shift(from, direction.getDx(), direction.getDy());
+            List<WorldPosition> path = route(Collections.singletonList(start), hunter, wolf, cell);
+            if (path == null) continue;
+            WorldPosition end = last(path);
+            if (flank) {
+                Plan leap = plan(target, end);
+                if (leap != null && !leap.lunge && !covers(facing, leap.lane)
+                    && canLaunch(leap, hunter, wolf.withTacticalPosition(end), facing, false)) return end;
+            } else {
+                double distance = distance(end, target);
+                if (distance < best) {
+                    best = distance;
+                    chosen = end;
+                }
+            }
+        }
+        return chosen;
+    }
+
+    boolean canStep(WorldPosition from, WorldPosition target, HunterState hunter, CreaturePatrolState wolf) {
+        return from.equals(wolf.getPosition()) && route(Collections.singletonList(from), hunter, wolf,
+            grid.worldToCell(target)) != null;
+    }
+
+    static boolean covers(Facing facing, Facing lane) {
+        return facing.stepsTo(lane) * 45 <= HALF_ANGLE_DEGREES;
+    }
+
+    private static boolean facesPosition(Facing facing, WorldPosition from, WorldPosition to) {
+        double dx = to.getX() - from.getX();
+        double dy = to.getY() - from.getY();
+        double dot = facing.getDx() * dx + facing.getDy() * dy;
+        return dot > 0 && Math.abs(facing.getDx() * dy - facing.getDy() * dx) <= dot;
+    }
+
+    private static double distance(WorldPosition a, WorldPosition b) {
+        return Math.hypot(a.getX() - b.getX(), a.getY() - b.getY());
+    }
+
+    private static CellCoordinates near(Plan plan) {
+        return shift(plan.targetCell, plan.lane.getDx(), plan.lane.getDy());
     }
 
     Impact resolve(Plan plan, HunterState hunter, CreaturePatrolState wolf, Facing facing, boolean braced,
                    OutcomeTable weights, DoubleSupplier random) {
         WorldPosition start = wolf.getPosition();
         if (!start.equals(plan.start)) return stopped(BLOCKED, start, 0);
+        if (plan.lunge) {
+            boolean hit = hunter.getPosition().equals(plan.target) && geometry.hasLineOfSight(start, plan.target);
+            return unprotected(hit, Collections.singletonList(start));
+        }
         List<WorldPosition> approach = route(Collections.singletonList(start), hunter, wolf, plan.contact);
         if (approach == null) return stopped(BLOCKED, start, 0);
 
         Facing lane = plan.lane;
-        CellCoordinates near = shift(plan.targetCell, lane.getDx(), lane.getDy());
+        CellCoordinates near = near(plan);
         List<WorldPosition> close = route(approach, hunter, wolf, near);
         boolean targetPresent = hunter.getPosition().equals(plan.target);
         WorldPosition contact = last(approach);
         double reach = Math.hypot((long) plan.contact.getX() - plan.targetCell.getX(),
             (long) plan.contact.getY() - plan.targetCell.getY());
-        if (!braced || !targetPresent || facing.stepsTo(lane) * 45 > HALF_ANGLE_DEGREES
+        if (!braced || !targetPresent || !covers(facing, lane)
             || reach < MIN_REACH_CELLS || !geometry.hasLineOfSight(plan.target, contact)) {
             if (close == null) return stopped(BLOCKED, start, 0);
             boolean hit = targetPresent && geometry.hasLineOfSight(last(close), hunter.getPosition());
-            return hit ? new Impact(HIT, close, 1, 0, 2, 4) : new Impact(MISS, close, 0, 0, 0, 4);
+            return unprotected(hit, close);
         }
 
         EnumMap<Result, Impact> legal = new EnumMap<>(Result.class);
@@ -153,7 +219,7 @@ final class SpearClash {
             && oy >= Math.min(0, dy) && oy <= Math.max(0, dy) && dx * oy == dy * ox;
     }
 
-    private static CellCoordinates shift(CellCoordinates cell, int dx, int dy) {
+    static CellCoordinates shift(CellCoordinates cell, int dx, int dy) {
         long x = (long) cell.getX() + dx;
         long y = (long) cell.getY() + dy;
         return x < Integer.MIN_VALUE || x > Integer.MAX_VALUE || y < Integer.MIN_VALUE || y > Integer.MAX_VALUE
@@ -161,6 +227,10 @@ final class SpearClash {
     }
 
     static WorldPosition last(List<WorldPosition> path) { return path.get(path.size() - 1); }
+
+    private static Impact unprotected(boolean hit, List<WorldPosition> path) {
+        return hit ? new Impact(HIT, path, 1, 0, 2, 4) : new Impact(MISS, path, 0, 0, 0, 4);
+    }
 
     private static Impact stopped(Result result, WorldPosition at, long hunterRecovery) {
         return new Impact(result, Collections.singletonList(at), 0, 0, hunterRecovery, 4);

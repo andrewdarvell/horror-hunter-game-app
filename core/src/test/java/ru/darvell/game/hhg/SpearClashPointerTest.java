@@ -50,7 +50,7 @@ class SpearClashPointerTest extends TacticalPointerTest {
 
     private void play(FirstScreen screen, double delta) {
         tick(screen, 0);
-        for (int i = 0; i < 30 && screen.isBusy(); i++) tick(screen, delta);
+        for (int i = 0; i < 200 && screen.isBusy(); i++) tick(screen, delta);
         assertFalse(screen.isBusy());
     }
 
@@ -63,30 +63,21 @@ class SpearClashPointerTest extends TacticalPointerTest {
         button(screen, 0, 1);
         assertEquals("", screen.spearPreviewText());
         button(screen, 0, 0);
-        assertTrue(screen.spearPreviewText().contains("2 кв."));
+        assertTrue(screen.spearPreviewText().contains("Прорвался вплотную"));
+        assertEquals(0, scene.getSpearClashState().getRandomCursor());
         button(screen, 0, 0);
         assertEquals(0, scene.getTacticalTimeQuanta());
         up();
         click(screen, 0);
-        assertEquals(2, scene.getTacticalTimeQuanta());
+        assertEquals(10, scene.getTacticalTimeQuanta());
         assertTrue(screen.isBusy());
+        TacticalAttackResult result = scene.getLastResolution();
         button(screen, 0, 0);
         play(screen, .12);
         button(screen, 0, 0);
         assertEquals("", screen.spearPreviewText());
         up();
         bounds(480, 800);
-        click(screen, 0);
-        assertTrue(screen.spearPreviewText().contains("Прорвался вплотную"));
-        assertEquals(0, scene.getSpearClashState().getRandomCursor());
-        assertEquals(2, scene.getTacticalTimeQuanta());
-        tick(screen, 10);
-        click(screen, 0);
-        TacticalAttackResult result = scene.getLastResolution();
-        assertEquals(10, scene.getTacticalTimeQuanta());
-        assertEquals(1, scene.getSpearClashState().getRandomCursor());
-        assertTrue(CombatHud.spearPlayback(result, .3).contains("Прорвался вплотную"));
-        play(screen, .017);
         assertSame(result, scene.getLastResolution());
         assertEquals(1, scene.getSpearClashState().getRandomCursor());
         screen.hide();
@@ -110,12 +101,9 @@ class SpearClashPointerTest extends TacticalPointerTest {
         ready(screen);
         try {
             click(screen, 0);
-            click(screen, 0);
-            play(screen, delta);
-            click(screen, 0);
             assertTrue(screen.spearPreviewText().contains("Прорвался вплотную"));
             for (int i = 0; i < 40; i++) tick(screen, delta);
-            assertEquals(2, scene.getTacticalTimeQuanta());
+            assertEquals(0, scene.getTacticalTimeQuanta());
             assertEquals(0, scene.getSpearClashState().getRandomCursor());
             click(screen, 0);
             play(screen, delta);
@@ -130,6 +118,38 @@ class SpearClashPointerTest extends TacticalPointerTest {
     private static String trace(TacticalAttackResult result) {
         return result.getEvents().stream().map(event -> event.getType() + "@" + event.getOffset())
             .collect(Collectors.joining(","));
+    }
+
+    @Test
+    void approachInterpolatesPublishedStepsAndPauseKeepsTheDecisionFrozen() {
+        WorldGeometry geometry = WorldGeometry.empty();
+        WorldPosition wolf = new WorldPosition(5.5, .5);
+        WorldSceneState scene = new WorldSceneState(new HunterState(new WorldPosition(.5, .5), 1, .4),
+            new CreaturePatrolState(Arrays.asList(wolf, wolf.translate(1, 0)),
+                new CreatureBehaviorConfig(1, 1, 1, 1, 1, 2, 1.2, 10), .4, geometry),
+            grid, geometry, new SpearClashConfig(Facing.E, 3));
+        scene.enterTactical();
+        FirstScreen screen = screen(scene);
+        screen.show();
+        ready(screen);
+        click(screen, 0);
+        click(screen, 0);
+        TacticalAttackResult result = scene.getLastResolution();
+        assertEquals(new WorldPosition(3.5, .5), scene.getCreaturePosition());
+        assertEquals(wolf, screen.getVisualCreaturePosition());
+        tick(screen, 0);
+        tick(screen, .09);
+        assertEquals(5, screen.getVisualCreaturePosition().getX(), 1e-9);
+        assertEquals(new WorldPosition(3.5, .5), scene.getCreaturePosition());
+        play(screen, .08);
+        assertEquals(scene.getCreaturePosition(), screen.getVisualCreaturePosition());
+        screen.pause();
+        bounds(480, 800);
+        tick(screen, 100);
+        assertSame(result, scene.getLastResolution());
+        assertEquals(10, scene.getTacticalTimeQuanta());
+        assertEquals(1, scene.getSpearClashState().getRandomCursor());
+        screen.hide();
     }
 
     @Test
@@ -150,13 +170,12 @@ class SpearClashPointerTest extends TacticalPointerTest {
         screen.pause();
         assertEquals("", screen.spearPreviewText());
         click(screen, 0);
-        assertTrue(scene.trySpearAction(Kind.BRACE, null).isAccepted());
-        click(screen, 0); // selects continuation for the new snapshot
         assertTrue(screen.spearPreviewText().contains("Прорвался вплотную"));
         scene.tryMoveHunterTo(new CellCoordinates(0, 1));
-        click(screen, 0); // must select a new intent and cannot commit the old result
-        assertEquals(4, scene.getTacticalTimeQuanta());
+        click(screen, 0);
+        assertEquals(2, scene.getTacticalTimeQuanta());
         assertEquals(0, scene.getSpearClashState().getRandomCursor());
+        assertEquals("", screen.spearPreviewText());
         screen.hide();
         assertEquals("", screen.spearPreviewText());
     }
@@ -167,9 +186,6 @@ class SpearClashPointerTest extends TacticalPointerTest {
         FirstScreen screen = screen(scene);
         screen.show();
         ready(screen);
-        click(screen, 0);
-        click(screen, 0);
-        play(screen, .12);
         click(screen, 0);
         click(screen, 0);
         assertEquals(SceneMode.EXPLORATION, scene.getMode());

@@ -5,6 +5,7 @@ import ru.darvell.game.hhg.domain.tactical.PrototypeBiteState;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult;
 import ru.darvell.game.hhg.domain.tactical.SpearClashState;
 import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.ClashFacts;
+import ru.darvell.game.hhg.domain.tactical.TacticalAttackResult.ClashFact;
 
 /** Только перевод доменных фактов в текст; правила риска остаются в domain. */
 final class CombatHud {
@@ -37,7 +38,7 @@ final class CombatHud {
             String cause = r.getRejectionReason() == null ? spearResult(r) : rejection(r.getRejectionReason());
             return cost + "Прорыв прерван · " + cause;
         }
-        if (r.getClash() != null && r.getClash().getContact() != null) {
+        if (r.getClash() != null && r.getClash().getLastContact() != null) {
             return cost + (r.getOutcome() == TacticalAttackResult.Outcome.ESCAPED ? "Ожидается выход · " : "")
                 + spearResult(r);
         }
@@ -47,47 +48,64 @@ final class CombatHud {
             + (r.getHunterDamage()>0 ? " · −"+r.getHunterDamage()+" HP" : " · без урона");
     }
     static String spearPhase(SpearClashState state) {
-        String hunter = "Направление " + state.getFacing()
-            + (state.isBraced() ? " · Рогатина выставлена" : " · Рогатина опущена");
+        return spearPhase(state, 0);
+    }
+
+    private static String spearPhase(SpearClashState state, long elapsed) {
+        long wolf = Math.max(0, state.getWolfRemaining() - elapsed);
+        long hunter = Math.max(0, state.getHunterRecovery() - elapsed);
+        String stance = state.isBraced() ? "Рогатина выставлена" : "Рогатина опущена";
+        String detail;
         switch (state.getWolfPhase()) {
-            case PREPARING: return hunter + " · Волк готовится: " + state.getWolfRemaining() + " кв.";
-            case IN_FLIGHT: return hunter + " · Волк в прыжке: " + state.getWolfRemaining() + " кв.";
-            case RECOVERING: return hunter + " · Волк восстанавливается: " + state.getWolfRemaining() + " кв.";
-            case SPENT: return hunter + " · Прыжков больше нет";
-            default: return hunter;
+            case STEPPING: detail = "Волк перемещается: " + wolf + " кв."; break;
+            case PREPARING: detail = "Волк готовится: " + wolf + " кв."; break;
+            case IN_FLIGHT: detail = "Волк в прыжке: " + wolf + " кв."; break;
+            case RECOVERING: detail = "Волк восстанавливается: " + wolf + " кв."; break;
+            default: detail = state.isNoRoute() ? "У волка нет пути" : "Волк готов"; break;
         }
+        return "Направление " + state.getFacing() + " · " + stance + " · " + detail
+            + (hunter == 0 ? "" : " · Восстановление охотника: " + hunter + " кв.");
     }
 
     static String spearResult(TacticalAttackResult result) {
-        ClashFacts clash = result.getClash();
         if (!result.isAccepted()) return "Действие недоступно";
-        if (clash.getContact() == null) {
+        ClashFacts clash = result.getClash();
+        ClashFact last = clash.getLastContact();
+        String reason = stop(clash.getStopReason());
+        String end = reason.isEmpty() ? "" : " · " + reason;
+        if (last == null) {
             String time = "Время: " + result.getDuration() * 2L + " кв.";
-            if (result.getKind() != TacticalAttackResult.Kind.ATTACK) return time;
+            if (result.getKind() != TacticalAttackResult.Kind.ATTACK) return time + end;
             return time + " · " + (result.getOutcome() == TacticalAttackResult.Outcome.HIT ? "Попадание" : "Промах")
-                + " · Без контакта прыжка";
+                + end;
         }
-        return contact(clash.getContact()) + " · Урон: " + result.getHunterDamage() + "/" + result.getCreatureDamage()
-            + " · Восстановление: " + clash.getHunterRecovery() + "/" + clash.getWolfRecovery() + " кв."
-            + (result.isHunterDefeated() ? " · Охотник повержен" : "");
+        return contact(last.getContact()) + " · Урон: " + result.getHunterDamage() + "/" + result.getCreatureDamage()
+            + " · Восстановление: " + last.getHunterRecovery() + "/" + last.getWolfRecovery() + " кв."
+            + (result.isHunterDefeated() ? " · Охотник повержен" : end);
     }
 
-    static String spearPlayback(TacticalAttackResult result, double progress) {
+    static String spearPlayback(TacticalAttackResult result, double elapsed) {
         ClashFacts clash = result.getClash();
-        long elapsed = (long) Math.floor(progress * result.getDuration() * 2);
-        String phase = spearPhase(clash.getBefore());
-        for (TacticalAttackResult.Event fact : result.getEvents()) {
-            if (2L * fact.getOffset() > elapsed) break;
-            phase = fact.getType() == TacticalAttackResult.EventType.LEAP_CONTACT
-                ? contact(clash.getContact()) : event(fact.getType());
+        ClashFact current = SpearPlayback.lastFact(clash, elapsed);
+        if (current == null) return spearPhase(clash.getBefore(), (long) elapsed);
+        ClashFact lastContact = null;
+        for (ClashFact fact : clash.getTimeline()) {
+            if (fact.getOffset() > elapsed) break;
+            if (fact.getContact() != null) lastContact = fact;
         }
-        long afterContact = elapsed - clash.getContactOffset();
-        if (clash.getContact() != null && afterContact >= 0) {
-            return contact(clash.getContact()) + " · Восстановление: "
-                + Math.max(0, clash.getHunterRecovery() - afterContact) + "/"
-                + Math.max(0, clash.getWolfRecovery() - afterContact) + " кв.";
+        String event = lastContact != null && lastContact.getOffset() == current.getOffset()
+            ? contact(lastContact.getContact()) : event(current.getType());
+        return event + " · " + spearPhase(current.getState(), (long) elapsed - current.getOffset());
+    }
+
+    private static String stop(SpearClashState.StopReason reason) {
+        switch (reason) {
+            case SIDE_THREAT: return "Угроза сбоку · выберите действие";
+            case LEAP_RESOLVED: return "Прыжок завершён";
+            case GUARD_LIMIT: return "Лимит удержания";
+            case NO_ROUTE: return "У волка нет пути";
+            default: return "";
         }
-        return phase;
     }
 
     private static String contact(SpearClashState.Result contact) {
@@ -141,6 +159,13 @@ final class CombatHud {
             case HUNTER_RECOVERY_ENDED: return "Охотник готов";
             case WOLF_RECOVERY_STARTED: return "Волк восстанавливается";
             case WOLF_RECOVERY_ENDED: return "Волк готов";
+            case WOLF_STEP_STARTED: return "Волк сближается";
+            case WOLF_FLANK_STARTED: return "Волк заходит сбоку";
+            case WOLF_MOVED: return "Волк сменил позицию";
+            case WOLF_STEP_BLOCKED: return "Шаг волка заблокирован";
+            case WOLF_NO_ROUTE: return "Волку некуда идти";
+            case LEAP_PREPARATION_STARTED: return "Волк готовит прыжок";
+            case STANCE_RELEASED: return "Стойка отменена";
             default: throw new IllegalArgumentException("Unknown event");
         }
     }
