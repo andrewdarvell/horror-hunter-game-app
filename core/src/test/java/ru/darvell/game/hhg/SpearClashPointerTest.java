@@ -209,4 +209,36 @@ class SpearClashPointerTest extends TacticalPointerTest {
         assertNull(ordinaryScreen.spearButtonBounds(0));
         ordinaryScreen.hide();
     }
+    @Test
+    void v2OddBiteKeepsInputGateAcrossPauseResizeAndHeldPress() {
+        for (double delta : new double[]{.013, .047, .2}) {
+            WorldGeometry geometry = WorldGeometry.empty();
+            WorldPosition wolf = new WorldPosition(1.5, 1.5);
+            WorldSceneState scene = new WorldSceneState(new HunterState(new WorldPosition(.5, .5), 1, .4, 6),
+                new CreaturePatrolState(Arrays.asList(wolf, wolf.translate(1, 0)),
+                    new CreatureBehaviorConfig(1, 1, 1, 1, 1, 2, 1.2, 10), .4, geometry, 4),
+                grid, geometry, SpearClashConfig.v2(Facing.E, 3));
+            scene.enterTactical();
+            FirstScreen screen = screen(scene);
+            screen.show(); ready(screen);
+            click(screen, 0);
+            assertTrue(screen.spearPreviewText().contains("Укус"));
+            click(screen, 0);
+            assertTrue(screen.isBusy());
+            TacticalAttackResult result = scene.getLastResolution();
+            assertEquals(3, scene.getTacticalTimeQuanta());
+            tick(screen, 0); tick(screen, Double.NaN);
+            button(screen, 0, 0);
+            bounds(480, 800);
+            play(screen, delta);
+            button(screen, 0, 0);
+            assertSame(result, scene.getLastResolution());
+            assertEquals("", screen.spearPreviewText());
+            assertEquals(5, scene.getHunterHealth());
+            assertEquals(6, scene.getHunterMaxHealth());
+            assertEquals(4, scene.getCreatureMaxHealth());
+            assertEquals(3, scene.getTacticalTimeQuanta());
+            up(); screen.hide(); bounds(800, 600);
+        }
+    }
 }

@@ -35,7 +35,7 @@ final class SpearPlayback {
     }
 
     static double duration(TacticalAttackResult result) {
-        double seconds = result.getDuration() * 2L * QUANTUM_SECONDS;
+        double seconds = result.getDurationQuanta() * QUANTUM_SECONDS;
         for (ClashFact fact : result.getClash().getTimeline()) seconds += aftermathSeconds(fact);
         return seconds + .2; // The final body and terminal result receive a visible frame interval.
     }
@@ -59,26 +59,35 @@ final class SpearPlayback {
             if (fact.getContact() == null) continue;
             double contact = fact.getOffset() * QUANTUM_SECONDS + shift;
             if (seconds < contact) break;
-            if (seconds < contact + CONTACT_SECONDS) return "Контакт · " + CombatHud.contact(fact.getContact());
+            if (seconds < contact + CONTACT_SECONDS) return "Контакт · " + CombatHud.contact(fact);
             if (seconds < contact + aftermathSeconds(fact)) {
                 return fact.getContact() == SpearClashState.Result.REPELLED ? "Отбрасывание"
                     : fact.getContact() == SpearClashState.Result.GRAZED_PAST ? "Проскок" : "Завершение движения";
             }
             shift += aftermathSeconds(fact);
         }
-        if (health(result, seconds, false) == 0) return "Волк повержен";
-        if (health(result, seconds, true) == 0) return "Охотник повержен";
+        if (bodyHealth(result, seconds, true) == 0) return "Охотник повержен";
+        if (bodyHealth(result, seconds, false) == 0) return "Волк повержен";
         return CombatHud.spearPlayback(result, combatQuanta(result.getClash(), seconds));
     }
 
     static int health(TacticalAttackResult result, double seconds, boolean hunter) {
+        return health(result, seconds, hunter, false);
+    }
+
+    static int bodyHealth(TacticalAttackResult result, double seconds, boolean hunter) {
+        return health(result, seconds, hunter, true);
+    }
+
+    private static int health(TacticalAttackResult result, double seconds, boolean hunter, boolean body) {
         int health = hunter ? result.getHunterBefore() : result.getCreatureBefore();
         double shift = 0;
         for (ClashFact fact : result.getClash().getTimeline()) {
             double time = fact.getOffset() * QUANTUM_SECONDS + shift;
             int next = hunter ? fact.getHunterHealth() : fact.getWolfHealth();
             // Lethal damage is already committed in domain; reveal death after physical motion.
-            if (next == 0) time += aftermathSeconds(fact);
+            if (next == 0 && (body || result.getClash().getBefore().getProfile()
+                != ru.darvell.game.hhg.domain.tactical.SpearCombatProfile.Id.V2)) time += aftermathSeconds(fact);
             if (seconds < time) break;
             health = next;
             shift += aftermathSeconds(fact);

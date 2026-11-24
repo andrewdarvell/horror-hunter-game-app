@@ -249,3 +249,11 @@ tasks.register('boarSpearWolfClashSmoke', JavaExec) {
   mainClass = 'ru.darvell.game.hhg.BoarSpearWolfClashSmoke'
   workingDir = rootProject.file('assets')
 }
+
+tasks.register('spearWolfV2Smoke', JavaExec) {
+  dependsOn compileCombatRhythmSmoke
+  classpath = sourceSets.main.runtimeClasspath + files(layout.buildDirectory.dir('classes/smoke'))
+  mainClass = 'ru.darvell.game.hhg.BoarSpearWolfClashSmoke'
+  args 'v2-smoke'
+  workingDir = rootProject.file('assets')
+}
