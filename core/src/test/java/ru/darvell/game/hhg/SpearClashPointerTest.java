@@ -193,6 +193,7 @@ class SpearClashPointerTest extends TacticalPointerTest {
         down(1, 0);
         screen.updateScene(1, 0, .50, true);
         screen.updateScene(1, 0, .50, true);
+        play(screen, .12);
         assertFalse(screen.isBusy());
         assertEquals(SceneMode.EXPLORATION, scene.getMode());
         assertEquals(new WorldPosition(.5, .5), scene.getHunterPosition());

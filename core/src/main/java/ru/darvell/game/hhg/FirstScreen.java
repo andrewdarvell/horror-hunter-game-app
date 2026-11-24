@@ -207,16 +207,27 @@ public class FirstScreen implements Screen {
     }
 
     private void playResolution(TacticalAttackResult result, double minimumSeconds) {
-        showResolution(result);
+        if (result.getClash() == null) showResolution(result);
+        else message = "";
         attackDisplayDuration = result.getClash() == null ? minimumSeconds
-            : Math.max(minimumSeconds, Math.min(1.5, result.getDuration() * .18));
+            : Math.max(minimumSeconds, SpearPlayback.duration(result));
         attackDisplay = attackDisplayDuration;
         attackJustCreated = true;
         selectVisualPositions();
     }
 
     private double playbackQuanta(TacticalAttackResult result) {
-        return (1 - attackDisplay / attackDisplayDuration) * result.getDuration() * 2L;
+        return SpearPlayback.combatQuanta(result.getClash(), playbackSeconds());
+    }
+
+    private double playbackSeconds() { return attackDisplayDuration - attackDisplay; }
+
+    int visualHealth(boolean hunter) {
+        TacticalAttackResult result = scene.getLastResolution();
+        if (attackDisplay > 0 && result != null && result.getClash() != null) {
+            return SpearPlayback.health(result, playbackSeconds(), hunter);
+        }
+        return hunter ? scene.getHunterHealth() : scene.getCreatureHealth();
     }
 
     private void showResolution(TacticalAttackResult result) {
@@ -418,7 +429,10 @@ public class FirstScreen implements Screen {
         }
         if (attackDisplay > 0) {
             if (attackJustCreated) attackJustCreated = false;
-            else attackDisplay = Math.max(0, attackDisplay - safeDelta);
+            else {
+                attackDisplay = Math.max(0, attackDisplay - safeDelta);
+                if (attackDisplay == 0) showResolution(scene.getLastResolution());
+            }
         }
         selectVisualPositions();
         return outcome;
@@ -438,7 +452,7 @@ public class FirstScreen implements Screen {
             ? scene.getCreaturePosition() : transition.getCreaturePosition();
         TacticalAttackResult last = scene.getLastResolution();
         if (attackDisplay > 0 && last != null && last.getClash() != null) {
-            visualCreaturePosition = SpearPlayback.wolfPosition(last.getClash(), playbackQuanta(last));
+            visualCreaturePosition = SpearPlayback.wolfPosition(last.getClash(), playbackSeconds());
         }
     }
 
@@ -490,7 +504,7 @@ public class FirstScreen implements Screen {
                 (float) obstacle.getHeight()
             );
         }
-        shapeRenderer.setColor(Color.GOLDENROD);
+        shapeRenderer.setColor(visualHealth(true) == 0 ? Color.DARK_GRAY : Color.GOLDENROD);
         WorldPosition position = visualHunterPosition;
         shapeRenderer.circle(
             (float) position.getX(),
@@ -498,7 +512,7 @@ public class FirstScreen implements Screen {
             (float) scene.getHunterRadius(),
             32
         );
-        shapeRenderer.setColor(scene.getCreatureHealth() == 0 ? Color.DARK_GRAY
+        shapeRenderer.setColor(visualHealth(false) == 0 ? Color.DARK_GRAY
             : selectedTarget != null ? Color.MAGENTA : scene.getCreatureBehavior() == Behavior.CHASE ? Color.RED : Color.CYAN);
         WorldPosition creaturePosition = visualCreaturePosition;
         shapeRenderer.circle(
@@ -507,7 +521,7 @@ public class FirstScreen implements Screen {
             (float) scene.getCreatureRadius(),
             32
         );
-        if (isShowingVictory()) {
+        if (isShowingVictory() && visualHealth(false) == 0) {
             shapeRenderer.setColor(Color.GOLD);
             float x = (float) creaturePosition.getX(), y = (float) creaturePosition.getY();
             float radius = (float) scene.getCreatureRadius();
@@ -563,7 +577,7 @@ public class FirstScreen implements Screen {
 
     private void drawSpearOverlay() {
         SpearClashState clash = scene.getSpearClashState();
-        if (clash == null || scene.getHunterHealth() == 0) return;
+        if (clash == null || visualHealth(true) == 0) return;
         TacticalAttackResult last = scene.getLastResolution();
         if (attackDisplay > 0 && last != null && last.getClash() != null) {
             clash = SpearPlayback.visibleState(last.getClash(), playbackQuanta(last));
@@ -650,6 +664,18 @@ public class FirstScreen implements Screen {
                 modeBounds, 44);
             if (!restriction.isEmpty()) drawModeLine(restriction, modeBounds, 22);
         }
+        TacticalAttackResult playback = scene.getLastResolution();
+        if (attackDisplay > 0 && playback != null && playback.getClash() != null) {
+            hudFont.setColor(Color.CYAN);
+            top = drawHudLine(SpearPlayback.phase(playback, playbackSeconds()), left, top, textWidth);
+            hudFont.setColor(Color.WHITE);
+            long start = scene.getTacticalTimeQuanta() - playback.getDuration() * 2L;
+            long visible = start + Math.min(playback.getDuration() * 2L, (long) playbackQuanta(playback));
+            drawHudLine("HP: " + visualHealth(true) + "/4 · Цель: " + visualHealth(false)
+                + "/2 · Время: q" + visible, left, top, textWidth);
+            hudBatch.end();
+            return;
+        }
         if (scene.getMode() != SceneMode.TACTICAL) {
             hudFont.setColor(Color.WHITE);
             String behavior = creatureBehaviorText();
@@ -696,10 +722,10 @@ public class FirstScreen implements Screen {
             ? Color.ORANGE : Color.CYAN);
         TacticalAttackResult latest = scene.getLastResolution();
         String phase = attackDisplay > 0 && latest != null && latest.getClash() != null
-            ? CombatHud.spearPlayback(latest, playbackQuanta(latest)) : CombatHud.phase(scene);
+            ? SpearPlayback.phase(latest, playbackSeconds()) : CombatHud.phase(scene);
         top = drawHudLine(phase, left, top, textWidth);
         hudFont.setColor(Color.WHITE);
-        top = drawHudLine("HP: " + scene.getHunterHealth() + "/4 · Цель: " + scene.getCreatureHealth()
+        top = drawHudLine("HP: " + visualHealth(true) + "/4 · Цель: " + visualHealth(false)
             + "/2 · Время: " + scene.getTacticalTimeUnits(), left, top, textWidth);
         if (attackDisplay == 0 || latest == null || latest.getClash() == null) {
             drawHudLine(message, left, top, textWidth);

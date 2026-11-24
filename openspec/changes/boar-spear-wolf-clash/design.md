@@ -125,3 +125,13 @@ PR #54 добавил один рабочий прыжок и три резул�
 [pr54]: https://github.com/andrewdarvell/horror-hunter-game-app/pull/54
 [combat]: https://github.com/andrewdarvell/horror-hunter-game-design/blob/main/docs/game-design/combat-system-spec.md
 [adr]: https://github.com/andrewdarvell/horror-hunter-game-design/blob/main/docs/architecture/ADR-001-hexagonal-architecture.md
+
+## Исправление playback по результатам ручной игры
+
+Main 913d073 уже реализует задачи 3–4; повторный цикл не заменяется.
+Impact и ClashFact передают индекс контакта в полном проверенном пути и снимок HP после факта.
+До контакта показывается только префикс маршрута. Playback вставляет положительный
+интервал контакта и отдельный интервал исходящего движения; следующие факты сдвигаются
+только на визуальной шкале. После исходящего движения показывается смерть.
+Боевые отметки, урон, occupancy, RNG и preview/apply остаются прежними.
+Ручной random печатает seed и выбирает новый при R; числовой seed воспроизводит сцену.
