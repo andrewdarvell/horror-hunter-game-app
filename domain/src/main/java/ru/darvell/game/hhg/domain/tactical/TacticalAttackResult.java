@@ -20,28 +20,34 @@ public final class TacticalAttackResult {
         LEAP_LAUNCHED, LEAP_CANCELLED, LEAP_CONTACT, LEAP_MISSED, LEAP_BLOCKED, ACTION_INTERRUPTED,
         BREAKOUT_BLOCKED, HUNTER_RECOVERY_STARTED, HUNTER_RECOVERY_ENDED, WOLF_RECOVERY_STARTED, WOLF_RECOVERY_ENDED,
         WOLF_STEP_STARTED, WOLF_FLANK_STARTED, WOLF_MOVED, WOLF_STEP_BLOCKED, WOLF_NO_ROUTE,
-        LEAP_PREPARATION_STARTED, STANCE_RELEASED
+        LEAP_PREPARATION_STARTED, BITE_PREPARATION_STARTED, STANCE_RELEASED
     }
     public static final class Event {
         private final EventType type;
-        private final int offset;
+        private final long offsetQuanta;
         public Event(EventType type, int offset) {
-            if (type == null || offset < 1) throw new IllegalArgumentException("Invalid event");
+            this(type, Math.multiplyExact((long) offset, 2));
+        }
+        public Event(EventType type, long offsetQuanta) {
+            if (type == null || offsetQuanta < 1) throw new IllegalArgumentException("Invalid event");
             this.type = type;
-            this.offset = offset;
+            this.offsetQuanta = offsetQuanta;
         }
         public EventType getType() { return type; }
-        public int getOffset() { return offset; }
+        public int getOffset() { return wholeTicks(offsetQuanta); }
+        public long getOffsetQuanta() { return offsetQuanta; }
     }
     private final Kind kind;
     private final RejectionReason rejectionReason;
-    private final int plannedDuration;
+    private final long plannedDurationQuanta;
+    private final long startQuanta;
     private final WorldPosition positionBefore, positionAfter;
     private final SceneMode modeBefore, modeAfter;
     private final PrototypeBiteState biteBefore, biteAfter;
     private final List<Event> events;
     private final Outcome outcome;
-    private final int hunterBefore, hunterAfter, creatureBefore, creatureAfter, duration;
+    private final int hunterBefore, hunterAfter, creatureBefore, creatureAfter;
+    private final long durationQuanta;
     private final List<Effect> effects;
     private final ClashFacts clash;
 
@@ -129,10 +135,24 @@ public final class TacticalAttackResult {
                                Kind kind, RejectionReason rejectionReason, int plannedDuration,
                                WorldPosition positionBefore, WorldPosition positionAfter, SceneMode modeBefore,
                                SceneMode modeAfter, ClashFacts clash) {
+        this(outcome, hunterBefore, hunterAfter, creatureBefore, creatureAfter,
+            Math.multiplyExact((long) duration, 2), biteBefore, biteAfter, events, kind, rejectionReason,
+            Math.multiplyExact((long) plannedDuration, 2), positionBefore, positionAfter, modeBefore, modeAfter, clash, 0);
+    }
+
+    public TacticalAttackResult(Outcome outcome, int hunterBefore, int hunterAfter,
+                               int creatureBefore, int creatureAfter, long durationQuanta,
+                               PrototypeBiteState biteBefore, PrototypeBiteState biteAfter, List<Event> events,
+                               Kind kind, RejectionReason rejectionReason, long plannedDurationQuanta,
+                               WorldPosition positionBefore, WorldPosition positionAfter, SceneMode modeBefore,
+                               SceneMode modeAfter, ClashFacts clash, long startQuanta) {
+        if (durationQuanta < 0 || plannedDurationQuanta < 0) throw new IllegalArgumentException("Negative duration");
+        Math.addExact(startQuanta, durationQuanta);
+        this.startQuanta = startQuanta;
         this.clash = clash;
         this.kind = kind;
         this.rejectionReason = rejectionReason;
-        this.plannedDuration = plannedDuration;
+        this.plannedDurationQuanta = plannedDurationQuanta;
         this.positionBefore = positionBefore;
         this.positionAfter = positionAfter;
         this.modeBefore = modeBefore;
@@ -148,13 +168,14 @@ public final class TacticalAttackResult {
         this.outcome = outcome;
         this.hunterBefore = hunterBefore; this.hunterAfter = hunterAfter;
         this.creatureBefore = creatureBefore; this.creatureAfter = creatureAfter;
-        this.duration = duration;
+        this.durationQuanta = durationQuanta;
         this.effects = Collections.unmodifiableList(new ArrayList<>(effects));
     }
     public ClashFacts getClash() { return clash; }
     public Kind getKind() { return kind; }
     public RejectionReason getRejectionReason() { return rejectionReason; }
-    public int getPlannedDuration() { return plannedDuration; }
+    public int getPlannedDuration() { return wholeTicks(plannedDurationQuanta); }
+    public long getPlannedDurationQuanta() { return plannedDurationQuanta; }
     public WorldPosition getPositionBefore() { return positionBefore; }
     public WorldPosition getPositionAfter() { return positionAfter; }
     public SceneMode getModeBefore() { return modeBefore; }
@@ -170,7 +191,14 @@ public final class TacticalAttackResult {
     public int getHunterAfter() { return hunterAfter; }
     public int getCreatureBefore() { return creatureBefore; }
     public int getCreatureAfter() { return creatureAfter; }
-    public int getDuration() { return duration; }
+    public int getDuration() { return wholeTicks(durationQuanta); }
+    public long getDurationQuanta() { return durationQuanta; }
+    public long getStartQuanta() { return startQuanta; }
+    public long getEndQuanta() { return Math.addExact(startQuanta, durationQuanta); }
+    private static int wholeTicks(long quanta) {
+        if (quanta % 2 != 0) throw new IllegalStateException("Expected whole tactical ticks");
+        return Math.toIntExact(quanta / 2);
+    }
     public int getHunterDamage() { return hunterBefore - hunterAfter; }
     public int getCreatureDamage() { return creatureBefore - creatureAfter; }
     public boolean isHunterDefeated() { return hunterAfter == 0; }

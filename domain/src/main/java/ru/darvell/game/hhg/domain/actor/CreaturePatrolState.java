@@ -17,7 +17,8 @@ public final class CreaturePatrolState {
     private final double radius;
     private boolean alerted;
     private WorldPosition lastSeenHunterPosition;
-    private int health = 2;
+    private int health;
+    private final int maxHealth;
     private WorldPosition position;
     private int targetIndex = 1;
     private int direction = 1;
@@ -29,6 +30,14 @@ public final class CreaturePatrolState {
 
     public CreaturePatrolState(List<WorldPosition> route, CreatureBehaviorConfig config, double radius,
                                WorldGeometry geometry) {
+        this(route, config, radius, geometry, 2);
+    }
+
+    public CreaturePatrolState(List<WorldPosition> route, CreatureBehaviorConfig config, double radius,
+                               WorldGeometry geometry, int maxHealth) {
+        if (maxHealth <= 0) throw new IllegalArgumentException("Maximum HP must be positive");
+        this.maxHealth = maxHealth;
+        this.health = maxHealth;
         if (route == null || route.size() < 2 || route.size() > 3 || geometry == null) {
             throw new IllegalArgumentException("Patrol needs two or three waypoints and world geometry");
         }
@@ -60,6 +69,7 @@ public final class CreaturePatrolState {
     }
 
     public int getHealth() { return health; }
+    public int getMaxHealth() { return maxHealth; }
     public boolean isDefeated() { return health == 0; }
 
     public CreaturePatrolState withDamage(int damage) {
@@ -115,6 +125,7 @@ public final class CreaturePatrolState {
 
     private CreaturePatrolState(CreaturePatrolState source) {
         health = source.health;
+        maxHealth = source.maxHealth;
         route = source.route;
         geometry = source.geometry;
         config = source.config;

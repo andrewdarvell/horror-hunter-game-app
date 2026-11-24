@@ -20,4 +20,7 @@ public class SpearClashState {
     boolean flankUsed;
     boolean noRoute;
     long randomCursor;
+    boolean bite;
+    long contactGuard;
+    SpearCombatProfile.Id profile;
 }

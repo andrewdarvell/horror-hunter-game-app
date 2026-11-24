@@ -61,6 +61,208 @@ class BoarSpearWolfClashTest {
         assertEquals(at(0, 1), lethal.getRoute().get(lethal.getContactIndex()));
     }
 
+    @Test
+    void oddQuantaSurvivePublicationAndLegacyConversionIsExplicit() {
+        begin(new SpearClashConfig(Facing.E, 3, 1, 2, 2, 50, 30, 20), at(0, 0), at(12, 0), 4, 2,
+            0, null, WolfTurn.recovering(1, false));
+        TacticalAttackResult preview = scene.previewSpearAction(Kind.BRACE, null);
+        assertEquals(0, scene.getTacticalTimeQuanta());
+        TacticalAttackResult applied = brace();
+        assertEquals(1, applied.getPlannedDurationQuanta());
+        assertEquals(9, applied.getDurationQuanta());
+        assertEquals(0, applied.getStartQuanta());
+        assertEquals(9, applied.getEndQuanta());
+        assertEquals(9, scene.getTacticalTimeQuanta());
+        assertEquals(2, scene.getSpearClashState().getWolfRemaining());
+        assertEquals(preview.getClash(), applied.getClash());
+        assertEquals(preview.getDurationQuanta(), applied.getDurationQuanta());
+        assertThrows(IllegalStateException.class, applied::getPlannedDuration);
+        assertThrows(IllegalStateException.class, applied::getDuration);
+        assertThrows(IllegalStateException.class, scene::getTacticalTimeUnits);
+        TacticalAttackResult.Event ready = applied.getEvents().stream()
+            .filter(e -> e.getType() == BRACE_READY).findFirst().get();
+        assertEquals(1, ready.getOffsetQuanta());
+        assertThrows(IllegalStateException.class, ready::getOffset);
+        assertEquals(Arrays.asList(3L, 5L, 7L, 9L), facts(applied, WOLF_MOVED).stream().map(ClashFact::getOffset).collect(Collectors.toList()));
+    }
+
+    @Test
+    void oddAbsoluteOriginAndDeadlineOverflowRemainAtomic() {
+        begin(new SpearClashConfig(Facing.E, 3), at(0, 0), at(3, 0), 4, 2,
+            1, null, WolfTurn.ready(false, false));
+        TacticalAttackResult result = brace();
+        assertEquals(1, result.getStartQuanta());
+        assertEquals(7, result.getEndQuanta());
+        assertEquals(6, result.getDurationQuanta());
+        assertEquals(3, result.getDuration());
+        begin(new SpearClashConfig(Facing.E, 3, 1, 2, 2, 50, 30, 20), at(0, 0), at(3, 0), 4, 2,
+            Long.MAX_VALUE - 7, null, WolfTurn.ready(false, false));
+        long before = scene.getTacticalTimeQuanta();
+        assertThrows(ArithmeticException.class, () -> scene.previewSpearAction(Kind.BRACE, null));
+        assertThrows(ArithmeticException.class, () -> scene.trySpearAction(Kind.BRACE, null));
+        assertEquals(before, scene.getTacticalTimeQuanta());
+        assertEquals(4, scene.getHunterHealth());
+        assertEquals(2, scene.getCreatureHealth());
+        assertEquals(0, scene.getSpearClashState().getRandomCursor());
+        assertNull(scene.getLastResolution());
+    }
+
+    @Test
+    void v2BiteWinsOverPhysicallyAvailableFlankAndHasNoFlight() {
+        HunterState hunter = new HunterState(at(0, 0), 1, .4);
+        CreaturePatrolState wolf = new CreaturePatrolState(Arrays.asList(at(1, 1), at(2, 1)),
+            BEHAVIOR, .4, WorldGeometry.empty());
+        assertEquals(at(0, 2), new SpearClash(GRID, WorldGeometry.empty()).stepTarget(hunter, wolf, Facing.E, true));
+        begin(SpearClashConfig.v2(Facing.E, 3), at(0, 0), at(1, 1), 6, 4,
+            0, null, WolfTurn.ready(false, false));
+        TacticalAttackResult result = brace();
+        assertEquals(at(1, 1), scene.getCreaturePosition());
+        assertEquals(5, scene.getHunterHealth());
+        assertEquals(3, scene.getTacticalTimeQuanta());
+        assertEquals(1, scene.getSpearClashState().getWolfRemaining());
+        assertTrue(scene.getSpearClashState().isBite());
+        assertEquals(0, scene.getSpearClashState().getRandomCursor());
+        assertEquals(Arrays.asList(1L), times(result, BITE));
+        assertTrue(facts(result, LEAP_LAUNCHED).isEmpty());
+        assertTrue(facts(result, WOLF_FLANK_STARTED).isEmpty());
+    }
+
+    @Test
+    void v2BreakthroughPreparesDuringRecoveryButContactWaitsForDecision() {
+        begin(SpearClashConfig.v2(Facing.E, 0), at(0, 0), at(3, 0), 6, 4,
+            0, null, WolfTurn.ready(false, false));
+        TacticalAttackResult result = brace();
+        assertEquals(Result.BROKE_THROUGH, result.getClash().getLastContact().getContact());
+        assertEquals(8, scene.getTacticalTimeQuanta());
+        assertEquals(5, scene.getHunterHealth());
+        assertEquals(Arrays.asList(5L), times(result, BITE_PREPARATION_STARTED));
+        assertEquals(1, scene.getSpearClashState().getWolfRemaining());
+        assertTrue(scene.getSpearClashState().isBite());
+        TacticalAttackResult preview = scene.previewAttackCreature(cell(1, 0));
+        assertEquals(8, scene.getTacticalTimeQuanta());
+        TacticalAttackResult applied = scene.tryAttackCreature(cell(1, 0));
+        assertEquals(preview.getClash(), applied.getClash());
+        assertEquals(11, scene.getTacticalTimeQuanta());
+        assertEquals(4, scene.getHunterHealth());
+        assertEquals(Arrays.asList(1L), times(applied, BITE));
+        assertEquals(1, scene.getSpearClashState().getWolfRemaining());
+    }
+
+    @Test
+    void v2MutualLethalContactIsDefeatAndKeepsBothDamageAndBody() {
+        begin(SpearClashConfig.v2(Facing.E, 1), at(0, 0), at(3, 0), 1, 1,
+            0, null, WolfTurn.ready(false, false));
+        TacticalAttackResult result = brace();
+        assertEquals(Result.GRAZED_PAST, result.getClash().getLastContact().getContact());
+        assertEquals(0, result.getHunterAfter());
+        assertEquals(0, result.getCreatureAfter());
+        assertEquals(at(-1, 1), scene.getCreaturePosition());
+        assertEquals(SceneMode.TACTICAL, scene.getMode());
+        assertEquals(4, scene.getTacticalTimeQuanta());
+        assertEquals(0, scene.getSpearClashState().getWolfRemaining());
+    }
+
+    @Test
+    void v2BiteMissKeepsHunterActionAndNeverMovesWolfOrConsumesRandom() {
+        begin(SpearClashConfig.v2(Facing.E, 3), at(0, 0), at(1, 1), 6, 4,
+            0, cursor -> { throw new AssertionError("Bite must not sample RNG"); }, WolfTurn.ready(false, false));
+        TacticalAttackResult result = move(-1, 0);
+        assertEquals(at(-1, 0), scene.getHunterPosition());
+        assertEquals(at(1, 1), scene.getCreaturePosition());
+        assertEquals(6, result.getHunterAfter());
+        assertEquals(Arrays.asList(1L), times(result, BITE_MISS));
+        assertTrue(facts(result, ACTION_INTERRUPTED).isEmpty());
+        assertEquals(1, scene.getSpearClashState().getWolfRemaining());
+    }
+
+    @Test
+    void v2AllOutcomeConsequencesAreOneContactAndExact() {
+        double[] samples = {.1, .5, .9};
+        Result[] expected = {Result.REPELLED, Result.GRAZED_PAST, Result.BROKE_THROUGH};
+        long[] hunterRecovery = {2, 4, 4}, wolfRecovery = {4, 2, 1};
+        for (int n = 0; n < samples.length; n++) {
+            double sample = samples[n];
+            begin(SpearClashConfig.v2(Facing.E, 0), at(0, 0), at(3, 0), 6, 4,
+                0, cursor -> sample, WolfTurn.ready(false, false));
+            TacticalAttackResult preview = scene.previewSpearAction(Kind.BRACE, null);
+            TacticalAttackResult result = brace();
+            assertEquals(preview.getClash(), result.getClash());
+            ClashFact contact = result.getClash().getLastContact();
+            assertEquals(expected[n], contact.getContact());
+            assertEquals(n == 0 ? 6 : 5, contact.getHunterHealth());
+            assertEquals(n == 2 ? 4 : 3, contact.getWolfHealth());
+            assertEquals(hunterRecovery[n], contact.getHunterRecovery());
+            assertEquals(wolfRecovery[n], contact.getWolfRecovery());
+            assertEquals(1, scene.getSpearClashState().getRandomCursor());
+            assertTrue(facts(result, BITE).isEmpty());
+        }
+    }
+
+    @Test
+    void v2LongLeapPreparesBeforeHunterReadyAndLaunchesWithPositiveFlight() {
+        ru.darvell.game.hhg.domain.tactical.SpearCombatProfile defaults =
+            ru.darvell.game.hhg.domain.tactical.SpearCombatProfile.v2();
+        java.util.EnumMap<Result, ru.darvell.game.hhg.domain.tactical.SpearCombatProfile.Consequence> values =
+            new java.util.EnumMap<>(Result.class);
+        for (Result result : Result.values()) values.put(result, defaults.consequence(result));
+        values.put(Result.REPELLED, new ru.darvell.game.hhg.domain.tactical.SpearCombatProfile.Consequence(0, 1, 8, 1));
+        ru.darvell.game.hhg.domain.tactical.SpearCombatProfile profile =
+            new ru.darvell.game.hhg.domain.tactical.SpearCombatProfile(
+                ru.darvell.game.hhg.domain.tactical.SpearCombatProfile.Id.V2, values,
+                defaults.bite(true), defaults.bite(false), 1, 1);
+        begin(new SpearClashConfig(Facing.E, 3, 2, 2, 2, 2, 35, 35, 30, profile),
+            at(0, 0), at(3, 0), 6, 4, 0, null, WolfTurn.ready(false, false));
+        TacticalAttackResult result = brace();
+        assertEquals(Arrays.asList(5L), times(result, LEAP_PREPARATION_STARTED));
+        assertEquals(Arrays.asList(2L, 11L), times(result, LEAP_LAUNCHED));
+        assertEquals(12, scene.getTacticalTimeQuanta());
+        assertEquals(WolfPhase.IN_FLIGHT, scene.getSpearClashState().getWolfPhase());
+        assertEquals(1, scene.getSpearClashState().getWolfRemaining());
+    }
+
+    @Test
+    void v2ExitChecksBiteThreatAndPreservesRecoveryAndHealthOnReentry() {
+        begin(SpearClashConfig.v2(Facing.E, 3), at(0, 0), at(1, 1), 6, 4,
+            0, null, WolfTurn.ready(false, false));
+        assertEquals(TacticalExitResult.ACTIVE_THREAT, scene.tryExitTactical());
+        assertEquals(0, scene.getTacticalTimeQuanta());
+        move(-1, 0);
+        assertEquals(TacticalExitResult.SUCCESS, scene.tryExitTactical());
+        assertEquals(2, scene.getTacticalTimeQuanta());
+        assertEquals(1, scene.getSpearClashState().getWolfRemaining());
+        assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.enterTactical());
+        assertEquals(2, scene.getTacticalTimeQuanta());
+        assertEquals(1, scene.getSpearClashState().getWolfRemaining());
+        assertEquals(6, scene.getHunterMaxHealth());
+        assertEquals(4, scene.getCreatureMaxHealth());
+        assertEquals(6, scene.getHunterHealth());
+        assertEquals(0, scene.getSpearClashState().getRandomCursor());
+    }
+
+    @Test
+    void v2BiteInterruptsBreakoutAndNewDamageStillRollsBackOnOverflow() {
+        begin(SpearClashConfig.v2(Facing.E, 3), at(0, 0), at(1, 1), 6, 4,
+            0, null, WolfTurn.ready(false, false));
+        TacticalAttackResult preview = scene.previewBreakoutTo(cell(0, -2));
+        TacticalAttackResult result = scene.tryBreakoutTo(cell(0, -2));
+        assertTrue(result.isAccepted());
+        assertEquals(preview.getClash(), result.getClash());
+        assertEquals(at(0, 0), scene.getHunterPosition());
+        assertEquals(5, scene.getHunterHealth());
+        assertEquals(Arrays.asList(1L), times(result, BREAKOUT_INTERRUPTED));
+        assertTrue(facts(result, BREAKOUT_MOVED).isEmpty());
+        begin(SpearClashConfig.v2(Facing.E, 1), at(0, 0), at(3, 0), 6, 4,
+            Long.MAX_VALUE - 5, null, WolfTurn.ready(false, false));
+        assertThrows(ArithmeticException.class, () -> scene.previewSpearAction(Kind.BRACE, null));
+        assertThrows(ArithmeticException.class, () -> scene.trySpearAction(Kind.BRACE, null));
+        assertEquals(6, scene.getHunterHealth());
+        assertEquals(4, scene.getCreatureHealth());
+        assertEquals(at(3, 0), scene.getCreaturePosition());
+        assertEquals(0, scene.getSpearClashState().getRandomCursor());
+        assertEquals(Long.MAX_VALUE - 5, scene.getTacticalTimeQuanta());
+        assertNull(scene.getLastResolution());
+    }
+
     private void begin(long seed, int wx, int wy, StaticAabb... obstacles) {
         begin(new SpearClashConfig(Facing.E, seed), at(0, 0), at(wx, wy), 4, 2,
             0, null, WolfTurn.ready(false, false), obstacles);
@@ -69,9 +271,10 @@ class BoarSpearWolfClashTest {
     private void begin(SpearClashConfig config, WorldPosition hunter, WorldPosition wolf, int hunterHp, int wolfHp,
                        long now, LongToDoubleFunction random, WolfTurn turn, StaticAabb... obstacles) {
         WorldGeometry geometry = new WorldGeometry(Arrays.asList(obstacles));
-        scene = new WorldSceneState(new HunterState(hunter, 1, .4).withDamage(4 - hunterHp),
-            new CreaturePatrolState(Arrays.asList(wolf, wolf.translate(1, 0)), BEHAVIOR, .4, geometry)
-                .withDamage(2 - wolfHp), GRID, geometry, config, now, random, turn);
+        scene = new WorldSceneState(new HunterState(hunter, 1, .4, config.getProfile().isV2() ? 6 : 4)
+                .withDamage((config.getProfile().isV2() ? 6 : 4) - hunterHp),
+            new CreaturePatrolState(Arrays.asList(wolf, wolf.translate(1, 0)), BEHAVIOR, .4, geometry, config.getProfile().isV2() ? 4 : 2)
+                .withDamage((config.getProfile().isV2() ? 4 : 2) - wolfHp), GRID, geometry, config, now, random, turn);
         assertEquals(TacticalEntryResult.Outcome.SUCCESS, scene.enterTactical());
     }
 
