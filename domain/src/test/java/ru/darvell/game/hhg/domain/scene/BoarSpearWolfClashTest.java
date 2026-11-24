@@ -36,6 +36,116 @@ class BoarSpearWolfClashTest {
     private WorldSceneState scene;
 
     @Test
+    void v2MeleeChainLetsLivingHunterStrikeDespiteRepeatedNonlethalBites() {
+        begin(SpearClashConfig.v2(Facing.E, 0), at(0, 0), at(1, 0), 6, 4,
+            0, null, WolfTurn.ready(false, false));
+        List<TacticalAttackResult> chain = new java.util.ArrayList<>();
+        for (int i = 0; i < 3; i++) chain.add(scene.tryAttackCreature(cell(1, 0)));
+        // До исправления: INTERRUPTED x3, q3/6/9, HP 3/4, ни одного HIT.
+        assertEquals(Arrays.asList(Outcome.HIT, Outcome.HIT, Outcome.HIT),
+            chain.stream().map(TacticalAttackResult::getOutcome).collect(Collectors.toList()));
+        assertEquals(Arrays.asList(6L, 12L, 16L),
+            chain.stream().map(TacticalAttackResult::getEndQuanta).collect(Collectors.toList()));
+        assertEquals(0, scene.getHunterHealth());
+        assertEquals(1, scene.getCreatureHealth());
+        assertEquals(SceneMode.TACTICAL, scene.getMode());
+    }
+
+    @Test
+    void v2StrikeWaitsForCommandAndRepeatedBiteRecoveryWithExactCausalOrder() {
+        begin(SpearClashConfig.v2(Facing.E, 0), at(0, 0), at(1, 0), 6, 4,
+            11, null, WolfTurn.ready(false, false));
+        for (int i = 0; i < 3; i++) {
+            scene.previewAttackCreature(cell(1, 0));
+            scene.update(0, 0, 100, false);
+            assertEquals(11, scene.getTacticalTimeQuanta());
+            assertEquals(6, scene.getHunterHealth());
+            assertNull(scene.getLastResolution());
+        }
+        TacticalAttackResult preview = scene.previewAttackCreature(cell(1, 0));
+        TacticalAttackResult result = scene.tryAttackCreature(cell(1, 0));
+        assertEquals(preview.getClash(), result.getClash());
+        assertEquals(preview.getEndQuanta(), result.getEndQuanta());
+        assertEquals(4, result.getPlannedDurationQuanta());
+        assertEquals(17, result.getEndQuanta());
+        assertEquals(Arrays.asList(3L, 6L), times(result, BITE_PREPARATION_STARTED));
+        assertEquals(Arrays.asList(1L, 4L), times(result, BITE));
+        assertEquals(Arrays.asList(1L, 4L), times(result, HUNTER_RECOVERY_STARTED));
+        assertEquals(Arrays.asList(3L, 6L), times(result, HUNTER_RECOVERY_ENDED));
+        assertEquals(Arrays.asList(4L), times(result, HIT));
+        List<ClashFact> facts = result.getClash().getTimeline();
+        assertTrue(facts.indexOf(facts(result, HIT).get(0)) < facts.indexOf(facts(result, BITE).get(1)));
+        assertTrue(times(result, ACTION_INTERRUPTED).isEmpty());
+        assertEquals(4, result.getHunterAfter());
+        assertEquals(3, result.getCreatureAfter());
+        assertEquals(0, scene.getSpearClashState().getHunterRecovery());
+        assertEquals(1, scene.getSpearClashState().getWolfRemaining());
+        assertEquals(StopReason.HUNTER_READY, result.getClash().getStopReason());
+    }
+
+    @Test
+    void v2DeathBeforeStrikeExplicitlyCancelsItAndDisablesFurtherCommands() {
+        begin(SpearClashConfig.v2(Facing.E, 0), at(0, 0), at(1, 0), 1, 4,
+            0, null, WolfTurn.ready(false, false));
+        TacticalAttackResult preview = scene.previewAttackCreature(cell(1, 0));
+        TacticalAttackResult result = scene.tryAttackCreature(cell(1, 0));
+        assertEquals(preview.getClash(), result.getClash());
+        assertEquals(Outcome.INTERRUPTED, result.getOutcome());
+        assertEquals(1, result.getDurationQuanta());
+        assertEquals(Arrays.asList(1L), times(result, ACTION_INTERRUPTED));
+        assertTrue(times(result, HIT).isEmpty());
+        assertTrue(times(result, HUNTER_RECOVERY_STARTED).isEmpty());
+        assertEquals(0, scene.getSpearClashState().getHunterRecovery());
+        assertEquals(0, scene.getSpearClashState().getWolfRemaining());
+        assertEquals(StopReason.TERMINAL, result.getClash().getStopReason());
+        assertEquals(Outcome.HUNTER_DEFEATED, scene.tryAttackCreature(cell(1, 0)).getOutcome());
+        assertSame(result, scene.getLastResolution());
+        assertEquals(1, scene.getTacticalTimeQuanta());
+    }
+
+    @Test
+    void v2SharedStrikeAndBiteDeadlinePreservesCompletedHitOrCancelsDeadWolfBite() {
+        for (int wolfHp : new int[] {1, 2}) {
+            begin(SpearClashConfig.v2(Facing.E, 0), at(0, 0), at(1, 0), 2, wolfHp,
+                0, null, WolfTurn.ready(false, false));
+            TacticalAttackResult result = scene.tryAttackCreature(cell(1, 0));
+            assertEquals(Outcome.HIT, result.getOutcome());
+            assertEquals(4, result.getEndQuanta());
+            assertEquals(Arrays.asList(4L), times(result, HIT));
+            assertEquals(wolfHp == 1 ? Arrays.asList(1L) : Arrays.asList(1L, 4L), times(result, BITE));
+            assertTrue(times(result, ACTION_INTERRUPTED).isEmpty());
+            assertEquals(wolfHp == 1 ? 1 : 0, result.getHunterAfter());
+            assertEquals(wolfHp - 1, result.getCreatureAfter());
+            assertEquals(wolfHp == 1 ? SceneMode.EXPLORATION : SceneMode.TACTICAL, scene.getMode());
+            assertEquals(StopReason.TERMINAL, result.getClash().getStopReason());
+        }
+    }
+
+    @Test
+    void v2EarlyRecoveryDoesNotReturnBeforeStrikeAndBiteStillInterruptsBraceAndTurn() {
+        begin(SpearClashConfig.v2(Facing.E, 0), at(0, 0), at(1, 0), 6, 4,
+            0, null, WolfTurn.recovering(1, false));
+        TacticalAttackResult result = scene.tryAttackCreature(cell(1, 0));
+        assertEquals(Arrays.asList(2L), times(result, BITE));
+        assertEquals(Arrays.asList(4L), times(result, HIT));
+        assertEquals(Arrays.asList(4L), times(result, HUNTER_RECOVERY_ENDED));
+        assertEquals(4, result.getEndQuanta());
+        assertEquals(5, result.getHunterAfter());
+        assertEquals(3, result.getCreatureAfter());
+        assertEquals(1, scene.getSpearClashState().getWolfRemaining());
+        for (Kind kind : Arrays.asList(Kind.BRACE, Kind.TURN)) {
+            begin(SpearClashConfig.v2(Facing.E, 0), at(0, 0), at(1, 0), 6, 4,
+                0, null, WolfTurn.ready(false, false));
+            TacticalAttackResult action = scene.trySpearAction(kind, Facing.W);
+            assertEquals(Outcome.INTERRUPTED, action.getOutcome());
+            assertEquals(Arrays.asList(1L), times(action, ACTION_INTERRUPTED));
+            assertTrue(times(action, BRACE_READY).isEmpty());
+            assertTrue(times(action, TURN_COMPLETED).isEmpty());
+            assertEquals(3, action.getEndQuanta());
+        }
+    }
+
+    @Test
     void contactNodeAndHealthAreExactForAllOutcomesIncludingDeath() {
         long[] seeds = {3, 1, 0};
         Result[] outcomes = {Result.REPELLED, Result.GRAZED_PAST, Result.BROKE_THROUGH};
@@ -142,9 +252,12 @@ class BoarSpearWolfClashTest {
         assertEquals(8, scene.getTacticalTimeQuanta());
         TacticalAttackResult applied = scene.tryAttackCreature(cell(1, 0));
         assertEquals(preview.getClash(), applied.getClash());
-        assertEquals(11, scene.getTacticalTimeQuanta());
-        assertEquals(4, scene.getHunterHealth());
-        assertEquals(Arrays.asList(1L), times(applied, BITE));
+        assertEquals(14, scene.getTacticalTimeQuanta());
+        assertEquals(3, scene.getHunterHealth());
+        assertEquals(3, scene.getCreatureHealth());
+        assertEquals(Arrays.asList(1L, 4L), times(applied, BITE));
+        assertEquals(Arrays.asList(4L), times(applied, HIT));
+        assertTrue(times(applied, ACTION_INTERRUPTED).isEmpty());
         assertEquals(1, scene.getSpearClashState().getWolfRemaining());
     }
 
