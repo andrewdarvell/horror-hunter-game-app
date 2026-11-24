@@ -38,6 +38,7 @@ final class SpearClash {
     static class Impact {
         Result result;
         List<WorldPosition> path;
+        int contactIndex;
         int hunterDamage;
         int wolfDamage;
         long hunterRecovery;
@@ -159,17 +160,17 @@ final class SpearClash {
         EnumMap<Result, Impact> legal = new EnumMap<>(Result.class);
         List<WorldPosition> rebound = route(approach, hunter, wolf,
             shift(plan.contact, lane.getDx(), lane.getDy()));
-        if (rebound != null) legal.put(REPELLED, new Impact(REPELLED, rebound, 0, 1, 2, 6));
+        if (rebound != null) legal.put(REPELLED, new Impact(REPELLED, rebound, approach.size() - 1, 0, 1, 2, 6));
         if (close != null) {
-            legal.put(BROKE_THROUGH, new Impact(BROKE_THROUGH, close, 0, 0, 6, 2));
+            legal.put(BROKE_THROUGH, new Impact(BROKE_THROUGH, close, approach.size() - 1, 0, 0, 6, 2));
             List<WorldPosition> bypass = bypass(plan, near, facing, close, hunter, wolf, 1);
             if (bypass == null) bypass = bypass(plan, near, facing, close, hunter, wolf, -1);
-            if (bypass != null) legal.put(GRAZED_PAST, new Impact(GRAZED_PAST, bypass, 0, 1, 4, 4));
+            if (bypass != null) legal.put(GRAZED_PAST, new Impact(GRAZED_PAST, bypass, approach.size() - 1, 0, 1, 4, 4));
         }
 
         OutcomeTable allowed = weights.filter(id -> legal.containsKey(Result.valueOf(id)));
         if (allowed.getOutcomes().stream().noneMatch(outcome -> outcome.getWeight() > 0)) {
-            return new Impact(STOPPED, approach, 0, 0, 2, 4);
+            return new Impact(STOPPED, approach, approach.size() - 1, 0, 0, 2, 4);
         }
         return legal.get(Result.valueOf(WeightedOutcomeResolver.resolve(allowed, random)));
     }
@@ -229,11 +230,11 @@ final class SpearClash {
     static WorldPosition last(List<WorldPosition> path) { return path.get(path.size() - 1); }
 
     private static Impact unprotected(boolean hit, List<WorldPosition> path) {
-        return hit ? new Impact(HIT, path, 1, 0, 2, 4) : new Impact(MISS, path, 0, 0, 0, 4);
+        return hit ? new Impact(HIT, path, path.size() - 1, 1, 0, 2, 4) : new Impact(MISS, path, path.size() - 1, 0, 0, 0, 4);
     }
 
     private static Impact stopped(Result result, WorldPosition at, long hunterRecovery) {
-        return new Impact(result, Collections.singletonList(at), 0, 0, hunterRecovery, 4);
+        return new Impact(result, Collections.singletonList(at), 0, 0, 0, hunterRecovery, 4);
     }
 
     static double sample(long seed, long cursor) {

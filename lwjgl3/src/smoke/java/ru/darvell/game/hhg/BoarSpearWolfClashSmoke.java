@@ -40,7 +40,10 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
         SIDE("side", 3, 0, 3, Result.HIT, 6, 0, 1),
         APPROACH("approach", 3, 5, 0, Result.REPELLED, 10, 3, 0),
         FLANK("flank", 3, 2, 1, null, 4, 0, 2),
-        REPEAT("repeat", 0, 3, 0, Result.BROKE_THROUGH, 10, 1, 0);
+        REPEAT("repeat", 0, 3, 0, Result.BROKE_THROUGH, 10, 1, 0),
+        LETHAL_REPEL("lethal-3", 3, 3, 0, Result.REPELLED, 4, 3, 0),
+        LETHAL_PASS("lethal-1", 1, 3, 0, Result.GRAZED_PAST, 4, -1, 1),
+        LETHAL_SIDE("lethal-side", 3, 0, 3, Result.HIT, 4, 0, 1);
 
         private final String argument;
         private final long seed;
@@ -66,6 +69,9 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
     private Scenario scenario;
     private int stage;
     private int frames;
+    private boolean randomSeed;
+    private long launchSeed;
+    private boolean flightCaptured, contactCaptured, motionCaptured;
     private static boolean failed;
 
     private BoarSpearWolfClashSmoke(Scenario scenario, boolean manual) {
@@ -76,21 +82,25 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
     @Override public void create() { reset(); }
 
     private void reset() {
+        if (randomSeed) launchSeed = new java.util.Random().nextLong();
+        System.out.println("SPEAR_SEED=" + (manual ? launchSeed : scenario.seed));
         if (screen != null) screen.dispose();
         WorldGeometry geometry = scenario == Scenario.FLANK
             ? new WorldGeometry(Collections.singletonList(new StaticAabb(.9, -.1, .2, .2))) : WorldGeometry.empty();
         TacticalGrid grid = new TacticalGrid(-.5, -.5, 1);
         WorldPosition start = scenario.start;
-        HunterState hunter = new HunterState(new WorldPosition(0, 0), 1, .4);
+        HunterState hunter = new HunterState(new WorldPosition(0, 0), 1, .4)
+            .withDamage(scenario == Scenario.LETHAL_SIDE ? 3 : 0);
         CreaturePatrolState wolf = new CreaturePatrolState(Arrays.asList(start, start.translate(1, 0)),
-            new CreatureBehaviorConfig(1, 1, 1, 1, 1, 2, 1.2, 10), .4, geometry);
-        scene = new WorldSceneState(hunter, wolf, grid, geometry, new SpearClashConfig(Facing.E, scenario.seed));
+            new CreatureBehaviorConfig(1, 1, 1, 1, 1, 2, 1.2, 10), .4, geometry).withDamage(scenario == Scenario.LETHAL_REPEL || scenario == Scenario.LETHAL_PASS ? 1 : 0);
+        scene = new WorldSceneState(hunter, wolf, grid, geometry, new SpearClashConfig(Facing.E, manual ? launchSeed : scenario.seed));
         viewport = new FitViewport(20, 15, new OrthographicCamera());
         screen = new FirstScreen(scene, grid, geometry, viewport, new ShapeRenderer());
         screen.show();
         screen.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         screen.updateScene(0, 0, 0, true);
         stage = 0;
+        flightCaptured = contactCaptured = motionCaptured = false;
     }
 
     @Override public void render() {
@@ -101,7 +111,28 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
                 return;
             }
             check(++frames < 2000, "Timed out");
-            if (screen.isBusy()) return;
+            if (screen.isBusy()) {
+                TacticalAttackResult playing = scene.getLastResolution();
+                if (playing != null && playing.getClash() != null && playing.getClash().getLastContact() != null) {
+                    WorldPosition visual = screen.getVisualCreaturePosition();
+                    TacticalAttackResult.ClashFact contact = playing.getClash().getLastContact();
+                    WorldPosition node = contact.getRoute().get(contact.getContactIndex());
+                    if (!flightCaptured && !visual.equals(playing.getClash().getWolfBefore()) && !visual.equals(node)) {
+                        capture("flight-" + scenario.name());
+                        flightCaptured = true;
+                    }
+                    if (!contactCaptured && visual.equals(node)) {
+                        capture("contact-" + scenario.name());
+                        contactCaptured = true;
+                    }
+                    if (contactCaptured && !motionCaptured && !visual.equals(node)
+                        && !visual.equals(playing.getClash().getWolfAfter())) {
+                        capture("aftermath-" + scenario.name());
+                        motionCaptured = true;
+                    }
+                }
+                return;
+            }
             switch (stage++) {
                 case 0:
                     clickSpear();
@@ -116,6 +147,11 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
                 case 2:
                     verifyOutcome(scenario.contact, scenario.decision, scenario.endpoint);
                     capture("result-" + scenario.name());
+                    if (scenario != Scenario.FLANK) check(flightCaptured && contactCaptured, "Missing flight/contact frames");
+                    if (scenario == Scenario.REPEL || scenario == Scenario.PASS || scenario == Scenario.CLOSE
+                        || scenario == Scenario.LETHAL_REPEL || scenario == Scenario.LETHAL_PASS) {
+                        check(motionCaptured, "Missing aftermath frames");
+                    }
                     if (scenario == Scenario.REPEAT) selectWolf();
                     else nextScenario();
                     break;
@@ -156,7 +192,7 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
         check((contact == null ? null : contact.getContact()) == expected, "Contact");
         check(scene.getTacticalTimeQuanta() == decision, "Decision time");
         check(scene.getCreaturePosition().equals(endpoint), "Landing");
-        check(clash.getRandomCursor() == (scenario == Scenario.SIDE || scenario == Scenario.FLANK ? 0 : 1), "Cursor");
+        check(clash.getRandomCursor() == (scenario == Scenario.SIDE || scenario == Scenario.LETHAL_SIDE || scenario == Scenario.FLANK ? 0 : 1), "Cursor");
         check(scene.getBiteState() == null, "Bite was armed");
         if (scenario == Scenario.FLANK) {
             check(clash.isBraced() && clash.isFlankUsed(), "Flank cleared the stance");
@@ -225,7 +261,7 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
         boolean manual = args.length == 1;
         if (manual) {
             scenario = Arrays.stream(Scenario.values()).filter(value -> value.argument.equals(args[0])).findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Use 3, 1, 0, side, approach, flank, or repeat"));
+                .orElse(Scenario.REPEL);
         } else if (args.length != 0) {
             throw new IllegalArgumentException("Use one fixture argument");
         }
@@ -233,7 +269,13 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
         configuration.setTitle("Horror Hunter · Рогатина и волк");
         configuration.setWindowedMode(800, 600);
         configuration.disableAudio(true);
-        new Lwjgl3Application(new BoarSpearWolfClashSmoke(scenario, manual), configuration);
+        BoarSpearWolfClashSmoke app = new BoarSpearWolfClashSmoke(scenario, manual);
+        app.randomSeed = manual && args[0].equals("random");
+        app.launchSeed = scenario.seed;
+        if (manual && !app.randomSeed && Arrays.stream(Scenario.values()).noneMatch(v -> v.argument.equals(args[0]))) {
+            app.launchSeed = Long.parseLong(args[0]);
+        }
+        new Lwjgl3Application(app, configuration);
         if (failed) throw new AssertionError("Spear clash smoke failed");
     }
 }

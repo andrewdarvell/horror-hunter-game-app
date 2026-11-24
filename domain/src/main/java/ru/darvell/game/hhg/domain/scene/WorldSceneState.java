@@ -678,7 +678,7 @@ public final class WorldSceneState {
                 default: braced = false; contactType = EventType.LEAP_CONTACT; break;
             }
             recordClashFact(contactType, offset - spearConfig.getFlightQuanta(), impact.getPath(), result,
-                impact.getHunterRecovery(), impact.getWolfRecovery());
+                impact.getHunterRecovery(), impact.getWolfRecovery(), impact.getContactIndex());
             if (result == SpearClashState.Result.HIT && commandActive()) {
                 interrupted = true;
                 record(kind == Kind.BREAKOUT ? EventType.BREAKOUT_INTERRUPTED : EventType.ACTION_INTERRUPTED);
@@ -743,10 +743,18 @@ public final class WorldSceneState {
 
         private void recordClashFact(EventType type, long motionStart, List<WorldPosition> route,
                                      SpearClashState.Result contact, long hunterDuration, long wolfDuration) {
+            recordClashFact(type, motionStart, route, contact, hunterDuration, wolfDuration,
+                Math.max(0, route.size() - 1));
+        }
+
+        private void recordClashFact(EventType type, long motionStart, List<WorldPosition> route,
+                                     SpearClashState.Result contact, long hunterDuration, long wolfDuration,
+                                     int contactIndex) {
             if (offset > 0) events.add(new Event(type, toResultUnits(offset)));
             long now = Math.addExact(before.nowQuanta, offset);
             clashFacts.add(new ClashFact(type, offset, clashTiming().view(now, Math.max(0, hunterRecovery - offset)),
-                motionStart, route, contact, hunterDuration, wolfDuration));
+                motionStart, route, contact, hunterDuration, wolfDuration, contactIndex,
+                hunter.getHealth(), creature.getHealth()));
         }
 
         private ClashTiming clashTiming() {

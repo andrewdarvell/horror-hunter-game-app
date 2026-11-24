@@ -108,7 +108,7 @@ final class CombatHud {
         }
     }
 
-    private static String contact(SpearClashState.Result contact) {
+    static String contact(SpearClashState.Result contact) {
         switch (contact) {
             case REPELLED: return "Отбросило";
             case GRAZED_PAST: return "Напоролся и проскочил";

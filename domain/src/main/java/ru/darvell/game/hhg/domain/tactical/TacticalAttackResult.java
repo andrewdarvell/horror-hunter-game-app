@@ -56,10 +56,16 @@ public final class TacticalAttackResult {
         SpearClashState.Result contact;
         long hunterRecovery;
         long wolfRecovery;
+        int contactIndex;
+        int hunterHealth;
+        int wolfHealth;
 
         public ClashFact(EventType type, long offset, SpearClashState state, long motionStart,
                          List<WorldPosition> route, SpearClashState.Result contact,
-                         long hunterRecovery, long wolfRecovery) {
+                         long hunterRecovery, long wolfRecovery, int contactIndex, int hunterHealth, int wolfHealth) {
+            this.contactIndex = contactIndex;
+            this.hunterHealth = hunterHealth;
+            this.wolfHealth = wolfHealth;
             this.type = type;
             this.offset = offset;
             this.state = state;

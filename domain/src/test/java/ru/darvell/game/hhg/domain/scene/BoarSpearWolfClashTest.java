@@ -35,6 +35,32 @@ class BoarSpearWolfClashTest {
     private static final CreatureBehaviorConfig BEHAVIOR = new CreatureBehaviorConfig(1, 1, 1, 1, 1, 2, 1.2, 10);
     private WorldSceneState scene;
 
+    @Test
+    void contactNodeAndHealthAreExactForAllOutcomesIncludingDeath() {
+        long[] seeds = {3, 1, 0};
+        Result[] outcomes = {Result.REPELLED, Result.GRAZED_PAST, Result.BROKE_THROUGH};
+        for (int i = 0; i < seeds.length; i++) {
+            begin(new SpearClashConfig(Facing.E, seeds[i]), at(0, 0), at(3, 0), 4, 1,
+                0, null, WolfTurn.ready(false, false));
+            TacticalAttackResult preview = scene.previewSpearAction(Kind.BRACE, null);
+            TacticalAttackResult result = brace();
+            assertEquals(preview.getClash(), result.getClash());
+            ClashFact fact = result.getClash().getLastContact();
+            assertEquals(outcomes[i], fact.getContact());
+            assertEquals(4, fact.getOffset());
+            assertEquals(2, fact.getMotionStart());
+            assertEquals(at(2, 0), fact.getRoute().get(fact.getContactIndex()));
+            assertEquals(4, fact.getHunterHealth());
+            assertEquals(i == 2 ? 1 : 0, fact.getWolfHealth());
+            assertEquals(scene.getCreaturePosition(), SpearClash.last(fact.getRoute()));
+        }
+        begin(new SpearClashConfig(Facing.E, 3), at(0, 0), at(0, 3), 1, 2,
+            0, null, WolfTurn.ready(false, false));
+        ClashFact lethal = brace().getClash().getLastContact();
+        assertEquals(0, lethal.getHunterHealth());
+        assertEquals(at(0, 1), lethal.getRoute().get(lethal.getContactIndex()));
+    }
+
     private void begin(long seed, int wx, int wy, StaticAabb... obstacles) {
         begin(new SpearClashConfig(Facing.E, seed), at(0, 0), at(wx, wy), 4, 2,
             0, null, WolfTurn.ready(false, false), obstacles);
