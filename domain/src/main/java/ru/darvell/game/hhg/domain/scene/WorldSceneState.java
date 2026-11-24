@@ -734,7 +734,9 @@ public final class WorldSceneState {
             recordClashFact(hit ? EventType.BITE : EventType.BITE_MISS, offset,
                 Collections.singletonList(creature.getPosition()), hit ? SpearClashState.Result.HIT : SpearClashState.Result.MISS,
                 consequence.getHunterRecovery(), consequence.getWolfRecovery());
-            if (hit && commandActive()) {
+            // В v2 обычный удар переживает нелетальный укус; смерть отменяет его до дедлайна.
+            boolean keepsMeleeStrike = spearConfig.getProfile().isV2() && kind == Kind.ATTACK && !hunter.isDefeated();
+            if (hit && commandActive() && !keepsMeleeStrike) {
                 interrupted = true;
                 record(kind == Kind.BREAKOUT ? EventType.BREAKOUT_INTERRUPTED : EventType.ACTION_INTERRUPTED);
             }

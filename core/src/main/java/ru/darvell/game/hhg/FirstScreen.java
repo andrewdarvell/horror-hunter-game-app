@@ -78,6 +78,20 @@ public class FirstScreen implements Screen {
     private SpearClashState spearPreviewState;
     private SpriteBatch hudBatch;
     private BitmapFont hudFont;
+    private java.util.function.Consumer<TacticalAttackResult> combatDebugSink;
+    private TacticalAttackResult lastLoggedResolution;
+
+    void setCombatDebugSink(java.util.function.Consumer<TacticalAttackResult> sink) {
+        combatDebugSink = sink;
+    }
+
+    private void logPublishedResolution(TacticalAttackResult result) {
+        if (combatDebugSink != null && result.isAccepted() && result == scene.getLastResolution()
+            && result != lastLoggedResolution) {
+            lastLoggedResolution = result;
+            combatDebugSink.accept(result);
+        }
+    }
 
     boolean isBusy() { return transition != null || attackDisplay > 0; }
     boolean isShowingVictory() {
@@ -207,6 +221,7 @@ public class FirstScreen implements Screen {
     }
 
     private void playResolution(TacticalAttackResult result, double minimumSeconds) {
+        logPublishedResolution(result);
         if (result.getClash() == null) showResolution(result);
         else message = "";
         attackDisplayDuration = result.getClash() == null ? minimumSeconds
@@ -318,6 +333,7 @@ public class FirstScreen implements Screen {
             WorldPosition start = scene.getHunterPosition();
             if (scene.tryMoveHunterTo(target) == TacticalMoveResult.SUCCESS) {
                 TacticalAttackResult result = scene.getLastResolution();
+                if (result.getClash() == null) logPublishedResolution(result);
                 if (result.getClash() == null) showResolution(result);
                 else playResolution(result, .18);
                 transition = TacticalEntryTransition.forHunterMove(start, scene.getHunterPosition(),

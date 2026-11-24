@@ -72,6 +72,7 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
     private int frames;
     private boolean randomSeed;
     private boolean manualV2;
+    private boolean manualMelee;
     private boolean biteCaptured;
     private long launchSeed;
     private boolean flightCaptured, contactCaptured, motionCaptured;
@@ -91,7 +92,7 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
         WorldGeometry geometry = scenario == Scenario.FLANK
             ? new WorldGeometry(Collections.singletonList(new StaticAabb(.9, -.1, .2, .2))) : WorldGeometry.empty();
         TacticalGrid grid = new TacticalGrid(-.5, -.5, 1);
-        WorldPosition start = scenario.start;
+        WorldPosition start = manualMelee ? new WorldPosition(1, 0) : scenario.start;
         HunterState hunter = new HunterState(new WorldPosition(0, 0), 1, .4, manualV2 ? 6 : 4)
             .withDamage((scenario == Scenario.LETHAL_SIDE || scenario == Scenario.MUTUAL) ? (manualV2 ? 5 : 3) : 0);
         CreaturePatrolState wolf = new CreaturePatrolState(Arrays.asList(start, start.translate(1, 0)),
@@ -105,6 +106,11 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
         scene = new WorldSceneState(hunter, wolf, grid, geometry, config);
         viewport = new FitViewport(20, 15, new OrthographicCamera());
         screen = new FirstScreen(scene, grid, geometry, viewport, new ShapeRenderer());
+        if (manual) {
+            final long seed = launchSeed;
+            screen.setCombatDebugSink(result -> System.out.print(
+                CombatDebugLog.format(config.getProfile().getId().name(), seed, result)));
+        }
         screen.show();
         screen.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         screen.updateScene(0, 0, 0, true);
@@ -174,8 +180,8 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
                     check(screen.isBusy(), "Second contact has no presentation");
                     break;
                 default:
-                    verifyOutcome(Result.HIT, manualV2 ? 11 : 16, scenario.endpoint);
-                    check(scene.getHunterHealth() == (manualV2 ? 4 : 3) && scene.getCreatureHealth() == (manualV2 ? 4 : 1), "Second exchange HP");
+                    verifyOutcome(Result.HIT, manualV2 ? 14 : 16, scenario.endpoint);
+                    check(scene.getHunterHealth() == 3 && scene.getCreatureHealth() == (manualV2 ? 3 : 1), "Second exchange HP");
                     capture("result-REPEAT-SECOND");
                     nextScenario();
             }
@@ -303,9 +309,10 @@ public final class BoarSpearWolfClashSmoke extends ApplicationAdapter {
         configuration.disableAudio(true);
         BoarSpearWolfClashSmoke app = new BoarSpearWolfClashSmoke(scenario, manual);
         app.manualV2 = automatedV2 || (manual && !regression);
+        app.manualMelee = manual && args[0].equals("melee");
         app.randomSeed = manual && args[0].equals("random");
-        app.launchSeed = scenario.seed;
-        if (manual && !app.randomSeed && Arrays.stream(Scenario.values()).noneMatch(v -> v.argument.equals(args[0]))) {
+        app.launchSeed = app.manualMelee ? 0 : scenario.seed;
+        if (manual && !app.randomSeed && !app.manualMelee && Arrays.stream(Scenario.values()).noneMatch(v -> v.argument.equals(args[0]))) {
             app.launchSeed = Long.parseLong(args[0]);
         }
         new Lwjgl3Application(app, configuration);
