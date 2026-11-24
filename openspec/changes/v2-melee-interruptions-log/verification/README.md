@@ -103,3 +103,4 @@ portrait и отсутствие команд после смерти. Это а
 Ручной playtest на Android-устройстве в этой задаче не выполнялся.
 
 Change остаётся активным; main specs не синхронизированы, archive не выполнен.
+Отдельный PR: [#62](https://github.com/andrewdarvell/horror-hunter-game-app/pull/62).
