@@ -164,6 +164,7 @@ final class CombatHud {
             case WOLF_MOVED: return "Волк сменил позицию";
             case WOLF_STEP_BLOCKED: return "Шаг волка заблокирован";
             case WOLF_NO_ROUTE: return "Волку некуда идти";
+            case BITE_PREPARATION_STARTED: return "Волк готовит укус";
             case LEAP_PREPARATION_STARTED: return "Волк готовит прыжок";
             case STANCE_RELEASED: return "Стойка отменена";
             default: throw new IllegalArgumentException("Unknown event");

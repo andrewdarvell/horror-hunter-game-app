@@ -12,14 +12,14 @@ import ru.darvell.game.hhg.domain.combat.outcome.OutcomeTable;
 import ru.darvell.game.hhg.domain.combat.outcome.WeightedOutcomeResolver;
 import ru.darvell.game.hhg.domain.tactical.CellCoordinates;
 import ru.darvell.game.hhg.domain.tactical.Facing;
+import ru.darvell.game.hhg.domain.tactical.SpearClashConfig;
+import ru.darvell.game.hhg.domain.tactical.SpearCombatProfile.Consequence;
 import ru.darvell.game.hhg.domain.tactical.SpearClashState.Result;
 import ru.darvell.game.hhg.domain.tactical.TacticalGrid;
 import ru.darvell.game.hhg.domain.world.WorldGeometry;
 import ru.darvell.game.hhg.domain.world.WorldPosition;
 
 import static ru.darvell.game.hhg.domain.tactical.SpearClashConfig.HALF_ANGLE_DEGREES;
-import static ru.darvell.game.hhg.domain.tactical.SpearClashConfig.MAX_REACH_CELLS;
-import static ru.darvell.game.hhg.domain.tactical.SpearClashConfig.MIN_REACH_CELLS;
 import static ru.darvell.game.hhg.domain.tactical.SpearClashState.Result.*;
 
 /** Geometry and consequences of a wolf leap. The scene owns the clock and the commit. */
@@ -45,10 +45,17 @@ final class SpearClash {
         long wolfRecovery;
     }
 
+    private final SpearClashConfig config;
     private final TacticalGrid grid;
     private final WorldGeometry geometry;
 
     SpearClash(TacticalGrid grid, WorldGeometry geometry) {
+        this(grid, geometry, new SpearClashConfig(Facing.E, 0));
+    }
+
+    SpearClash(TacticalGrid grid, WorldGeometry geometry,
+               SpearClashConfig config) {
+        this.config = config;
         this.grid = grid;
         this.geometry = geometry;
     }
@@ -66,7 +73,7 @@ final class SpearClash {
         Facing lane = Facing.along(Long.signum(dx), Long.signum(dy));
         if (steps == 1) return new Plan(wolf, hunter, home, start, lane, true);
         double laneLength = Math.hypot(lane.getDx(), lane.getDy());
-        int contactSteps = Math.min((int) steps - 1, (int) (MAX_REACH_CELLS / laneLength));
+        int contactSteps = Math.min((int) steps - 1, (int) (config.getMaxReachCells() / laneLength));
         if (contactSteps == 0) return null;
         CellCoordinates contact = shift(home, lane.getDx() * contactSteps, lane.getDy() * contactSteps);
         return new Plan(wolf, hunter, home, contact, lane, false);
@@ -76,7 +83,7 @@ final class SpearClash {
         if (plan == null || !plan.start.equals(wolf.getPosition()) || !plan.target.equals(hunter.getPosition())) return false;
         List<WorldPosition> approach = route(Collections.singletonList(plan.start), hunter, wolf, plan.contact);
         if (approach == null || !geometry.hasLineOfSight(plan.target, last(approach))) return false;
-        if (braced && !plan.lunge && covers(facing, plan.lane)) return true;
+        if (braced && !plan.lunge && inSector(facing, plan.lane)) return true;
         List<WorldPosition> close = route(approach, hunter, wolf, near(plan));
         return close != null && geometry.hasLineOfSight(plan.target, last(close));
     }
@@ -95,7 +102,7 @@ final class SpearClash {
             WorldPosition end = last(path);
             if (flank) {
                 Plan leap = plan(target, end);
-                if (leap != null && !leap.lunge && !covers(facing, leap.lane)
+                if (leap != null && !leap.lunge && !inSector(facing, leap.lane)
                     && canLaunch(leap, hunter, wolf.withTacticalPosition(end), facing, false)) return end;
             } else {
                 double distance = distance(end, target);
@@ -113,15 +120,20 @@ final class SpearClash {
             grid.worldToCell(target)) != null;
     }
 
+    boolean inSector(Facing facing, Facing lane) {
+        return facing.stepsTo(lane) < 2 && facing.stepsTo(lane) * 45 <= config.getHalfAngleDegrees();
+    }
+
     static boolean covers(Facing facing, Facing lane) {
         return facing.stepsTo(lane) * 45 <= HALF_ANGLE_DEGREES;
     }
 
-    private static boolean facesPosition(Facing facing, WorldPosition from, WorldPosition to) {
+    private boolean facesPosition(Facing facing, WorldPosition from, WorldPosition to) {
         double dx = to.getX() - from.getX();
         double dy = to.getY() - from.getY();
         double dot = facing.getDx() * dx + facing.getDy() * dy;
-        return dot > 0 && Math.abs(facing.getDx() * dy - facing.getDy() * dx) <= dot;
+        return dot > 0 && dot + 1e-12 >= Math.hypot(facing.getDx(), facing.getDy())
+            * Math.hypot(dx, dy) * Math.cos(Math.toRadians(config.getHalfAngleDegrees()));
     }
 
     private static double distance(WorldPosition a, WorldPosition b) {
@@ -150,8 +162,8 @@ final class SpearClash {
         WorldPosition contact = last(approach);
         double reach = Math.hypot((long) plan.contact.getX() - plan.targetCell.getX(),
             (long) plan.contact.getY() - plan.targetCell.getY());
-        if (!braced || !targetPresent || !covers(facing, lane)
-            || reach < MIN_REACH_CELLS || !geometry.hasLineOfSight(plan.target, contact)) {
+        if (!braced || !targetPresent || !inSector(facing, lane)
+            || reach < config.getMinReachCells() || !geometry.hasLineOfSight(plan.target, contact)) {
             if (close == null) return stopped(BLOCKED, start, 0);
             boolean hit = targetPresent && geometry.hasLineOfSight(last(close), hunter.getPosition());
             return unprotected(hit, close);
@@ -160,17 +172,17 @@ final class SpearClash {
         EnumMap<Result, Impact> legal = new EnumMap<>(Result.class);
         List<WorldPosition> rebound = route(approach, hunter, wolf,
             shift(plan.contact, lane.getDx(), lane.getDy()));
-        if (rebound != null) legal.put(REPELLED, new Impact(REPELLED, rebound, approach.size() - 1, 0, 1, 2, 6));
+        if (rebound != null) legal.put(REPELLED, impact(REPELLED, rebound, approach.size() - 1));
         if (close != null) {
-            legal.put(BROKE_THROUGH, new Impact(BROKE_THROUGH, close, approach.size() - 1, 0, 0, 6, 2));
+            legal.put(BROKE_THROUGH, impact(BROKE_THROUGH, close, approach.size() - 1));
             List<WorldPosition> bypass = bypass(plan, near, facing, close, hunter, wolf, 1);
             if (bypass == null) bypass = bypass(plan, near, facing, close, hunter, wolf, -1);
-            if (bypass != null) legal.put(GRAZED_PAST, new Impact(GRAZED_PAST, bypass, approach.size() - 1, 0, 1, 4, 4));
+            if (bypass != null) legal.put(GRAZED_PAST, impact(GRAZED_PAST, bypass, approach.size() - 1));
         }
 
         OutcomeTable allowed = weights.filter(id -> legal.containsKey(Result.valueOf(id)));
         if (allowed.getOutcomes().stream().noneMatch(outcome -> outcome.getWeight() > 0)) {
-            return new Impact(STOPPED, approach, approach.size() - 1, 0, 0, 2, 4);
+            return impact(STOPPED, approach, approach.size() - 1);
         }
         return legal.get(Result.valueOf(WeightedOutcomeResolver.resolve(allowed, random)));
     }
@@ -229,12 +241,18 @@ final class SpearClash {
 
     static WorldPosition last(List<WorldPosition> path) { return path.get(path.size() - 1); }
 
-    private static Impact unprotected(boolean hit, List<WorldPosition> path) {
-        return hit ? new Impact(HIT, path, path.size() - 1, 1, 0, 2, 4) : new Impact(MISS, path, path.size() - 1, 0, 0, 0, 4);
+    private Impact unprotected(boolean hit, List<WorldPosition> path) {
+        return impact(hit ? HIT : MISS, path, path.size() - 1);
     }
 
-    private static Impact stopped(Result result, WorldPosition at, long hunterRecovery) {
-        return new Impact(result, Collections.singletonList(at), 0, 0, 0, hunterRecovery, 4);
+    private Impact stopped(Result result, WorldPosition at, long hunterRecovery) {
+        return impact(result, Collections.singletonList(at), 0);
+    }
+
+    private Impact impact(Result result, List<WorldPosition> path, int index) {
+        Consequence effect = config.getProfile().consequence(result);
+        return new Impact(result, path, index, effect.getHunterDamage(), effect.getWolfDamage(),
+            effect.getHunterRecovery(), effect.getWolfRecovery());
     }
 
     static double sample(long seed, long cursor) {
