@@ -33,7 +33,7 @@ final class CombatHud {
     }
     static String breakout(TacticalAttackResult r) {
         if(!r.isAccepted()) return "Невозможно: " + rejection(r.getRejectionReason()) + " · 0 ед.";
-        String cost="Цена: " + r.getPlannedDuration() + " ед. · прошло: " + r.getDuration() + " ед. ";
+        String cost="Цена: " + ticks(r.getPlannedDurationQuanta()) + " ед. · прошло: " + ticks(r.getDurationQuanta()) + " ед. ";
         if (r.getClash() != null && r.getOutcome() == TacticalAttackResult.Outcome.INTERRUPTED) {
             String cause = r.getRejectionReason() == null ? spearResult(r) : rejection(r.getRejectionReason());
             return cost + "Прорыв прерван · " + cause;
@@ -58,9 +58,10 @@ final class CombatHud {
         String detail;
         switch (state.getWolfPhase()) {
             case STEPPING: detail = "Волк перемещается: " + wolf + " кв."; break;
-            case PREPARING: detail = "Волк готовится: " + wolf + " кв."; break;
-            case IN_FLIGHT: detail = "Волк в прыжке: " + wolf + " кв."; break;
-            case RECOVERING: detail = "Волк восстанавливается: " + wolf + " кв."; break;
+            case PREPARING: detail = (state.isBite() ? "Волк готовит укус: " : "Волк готовится: ")
+                + wolf + " кв. (" + ticks(wolf) + " т.)"; break;
+            case IN_FLIGHT: detail = "Волк в прыжке: " + wolf + " кв. (" + ticks(wolf) + " т.)"; break;
+            case RECOVERING: detail = "Волк восстанавливается: " + wolf + " кв. (" + ticks(wolf) + " т.)"; break;
             default: detail = state.isNoRoute() ? "У волка нет пути" : "Волк готов"; break;
         }
         return "Направление " + state.getFacing() + " · " + stance + " · " + detail
@@ -74,12 +75,12 @@ final class CombatHud {
         String reason = stop(clash.getStopReason());
         String end = reason.isEmpty() ? "" : " · " + reason;
         if (last == null) {
-            String time = "Время: " + result.getDuration() * 2L + " кв.";
+            String time = "Время: " + result.getDurationQuanta() + " кв.";
             if (result.getKind() != TacticalAttackResult.Kind.ATTACK) return time + end;
             return time + " · " + (result.getOutcome() == TacticalAttackResult.Outcome.HIT ? "Попадание" : "Промах")
                 + end;
         }
-        return contact(last.getContact()) + " · Урон: " + result.getHunterDamage() + "/" + result.getCreatureDamage()
+        return contact(last) + " · Урон: " + result.getHunterDamage() + "/" + result.getCreatureDamage()
             + " · Восстановление: " + last.getHunterRecovery() + "/" + last.getWolfRecovery() + " кв."
             + (result.isHunterDefeated() ? " · Охотник повержен" : end);
     }
@@ -94,7 +95,7 @@ final class CombatHud {
             if (fact.getContact() != null) lastContact = fact;
         }
         String event = lastContact != null && lastContact.getOffset() == current.getOffset()
-            ? contact(lastContact.getContact()) : event(current.getType());
+            ? contact(lastContact) : event(current.getType());
         return event + " · " + spearPhase(current.getState(), (long) elapsed - current.getOffset());
     }
 
@@ -106,6 +107,16 @@ final class CombatHud {
             case NO_ROUTE: return "У волка нет пути";
             default: return "";
         }
+    }
+
+    static String ticks(long quanta) {
+        return Long.toString(quanta / 2) + (quanta % 2 == 0 ? "" : ",5");
+    }
+
+    static String contact(ClashFact fact) {
+        if (fact.getType() == TacticalAttackResult.EventType.BITE) return "Укус";
+        if (fact.getType() == TacticalAttackResult.EventType.BITE_MISS) return "Укус мимо";
+        return contact(fact.getContact());
     }
 
     static String contact(SpearClashState.Result contact) {
